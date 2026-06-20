@@ -8,15 +8,15 @@ import { createChunkCache, setChunk } from '../src/chunks.js';
  * blocks is a map of "localX,localY,localZ" → block object.
  */
 function makeChunk(cx, cz, blocks = {}) {
-  const chunk = {
-    x: cx, z: cz,
-    getBlock(lx, ly, lz) {
-      const key = `${lx},${ly},${lz}`;
-      if (blocks[key]) return blocks[key];
-      return { name: 'air', stateId: 0, properties: {} };
-    },
-  };
-  return chunk;
+  const subChunks = new Map();
+  for (const [key, val] of Object.entries(blocks)) {
+    const [lx, ly, lz] = key.split(',').map(Number);
+    const cy = Math.floor(ly / 16);
+    if (!subChunks.has(cy)) subChunks.set(cy, new Uint32Array(4096));
+    const idx = (lx << 8) | (lz << 4) | (ly & 0xf);
+    subChunks.get(cy)[idx] = val.stateId ?? 0;
+  }
+  return { x: cx, z: cz, subChunks };
 }
 
 function posKey(x, y, z) {
@@ -28,10 +28,10 @@ function posKey(x, y, z) {
 function cacheWithFloor(floorY = 63, bounds = 5) {
   let cache = createChunkCache();
   const blocks = {};
-  // Solid floor
+  // Solid floor (stone=2532 in Bedrock 1.21)
   for (let x = -bounds; x <= bounds; x++) {
     for (let z = -bounds; z <= bounds; z++) {
-      blocks[posKey(x, floorY, z)] = { name: 'stone', stateId: 1 };
+      blocks[posKey(x, floorY, z)] = { stateId: 2532 };
     }
   }
   cache = setChunk(cache, 0, 0, makeChunk(0, 0, blocks));

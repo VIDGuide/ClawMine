@@ -8,13 +8,24 @@
 
 import { getBlock } from './chunks.js';
 
+// Bedrock 1.21 air block state ID
+const AIR_ID = 12530;
+
+function isAir(block) {
+  return !block || block.stateId === AIR_ID;
+}
+
+function isSolid(block) {
+  return block && block.stateId !== AIR_ID;
+}
+
 /**
  * Check if a block position is walkable (air at feet, air at head).
  */
 function isWalkable(cache, x, y, z) {
   const feet = getBlock(cache, x, y, z);
   const head = getBlock(cache, x, y + 1, z);
-  return feet && feet.name === 'air' && head && head.name === 'air';
+  return isAir(feet) && isAir(head);
 }
 
 /**
@@ -24,7 +35,7 @@ function isStepUp(cache, x, y, z) {
   const below = getBlock(cache, x, y - 1, z);
   const at = getBlock(cache, x, y, z);
   const above = getBlock(cache, x, y + 1, z);
-  return below && below.name !== 'air' && at && at.name === 'air' && above && above.name === 'air';
+  return isSolid(below) && isAir(at) && isAir(above);
 }
 
 /**
@@ -120,7 +131,7 @@ export function findPath(cache, sx, sy, sz, tx, ty, tz, maxIterations = 5000) {
         // Step up one block
         walkable = true;
         actualY = ny + 1;
-      } else if (isWalkable(cache, nx, ny - 1, nz) && getBlock(cache, nx, ny - 2, nz)?.name !== 'air') {
+      } else if (isWalkable(cache, nx, ny - 1, nz) && getBlock(cache, nx, ny - 2, nz)?.stateId !== AIR_ID) {
         // Step down one block (drop to lower level, but don't fall into void)
         // Only if there's solid ground below
         walkable = true;

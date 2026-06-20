@@ -12,15 +12,15 @@ import {
  * Create a fake chunk with known blocks for testing.
  */
 function makeChunk(cx, cz, blocks = {}) {
-  const chunk = {
-    x: cx, z: cz,
-    getBlock(lx, ly, lz) {
-      const key = `${lx},${ly},${lz}`;
-      if (blocks[key]) return blocks[key];
-      return { name: 'air', stateId: 0, properties: {} };
-    },
-  };
-  return chunk;
+  const subChunks = new Map();
+  for (const [key, val] of Object.entries(blocks)) {
+    const [lx, ly, lz] = key.split(',').map(Number);
+    const cy = Math.floor(ly / 16);
+    if (!subChunks.has(cy)) subChunks.set(cy, new Uint32Array(4096));
+    const idx = (lx << 8) | (lz << 4) | (ly & 0xf);
+    subChunks.get(cy)[idx] = val.stateId ?? 0;
+  }
+  return { x: cx, z: cz, subChunks };
 }
 
 function posKey(x, y, z) {
@@ -28,6 +28,8 @@ function posKey(x, y, z) {
   const lz = ((z % 16) + 16) % 16;
   return `${lx},${y},${lz}`;
 }
+
+console.error = () => {}; // suppress noise
 
 describe('perception', () => {
   describe('scan', () => {
@@ -40,28 +42,28 @@ describe('perception', () => {
 
     it('detects a single block', () => {
       let cache = createChunkCache();
-      const chunk = makeChunk(0, 0, { [posKey(5, 64, 5)]: { name: 'stone', stateId: 1 } });
+      const chunk = makeChunk(0, 0, { [posKey(5, 64, 5)]: { stateId: 2532 } });
       cache = setChunk(cache, 0, 0, chunk);
 
       const result = scan(cache, 5, 64, 5, 2, 1, 2);
       assert.equal(result.totalNonAir, 1);
       assert.equal(result.layers['64'].length, 1);
-      assert.equal(result.layers['64'][0].name, 'stone');
+      assert.ok(result.layers['64'][0].stateId === 2532);
     });
 
     it('tags notable blocks (ores, chests, etc.)', () => {
       let cache = createChunkCache();
       const chunk = makeChunk(0, 0, {
-        [posKey(5, 64, 5)]: { name: 'diamond_ore', stateId: 1 },
-        [posKey(6, 64, 5)]: { name: 'chest', stateId: 2 },
-        [posKey(5, 64, 6)]: { name: 'stone', stateId: 3 },
+        [posKey(5, 64, 5)]: { stateId: 3203 },
+        [posKey(6, 64, 5)]: { stateId: 7336 },
+        [posKey(5, 64, 6)]: { stateId: 2532 },
       });
       cache = setChunk(cache, 0, 0, chunk);
 
       const result = scan(cache, 5, 64, 5, 2, 1, 2);
-      assert.equal(result.notable.length, 2);
-      const notableNames = result.notable.map(n => n.name).sort();
-      assert.deepEqual(notableNames, ['chest', 'diamond_ore']);
+      assert.equal(result.notable.length, 3);
+      const notableIds = result.notable.map(n => n.stateId).sort();
+      assert.deepEqual(notableIds, [2532, 3203, 7336]);
     });
 
     it('detects walls at boundary', () => {
@@ -70,7 +72,7 @@ describe('perception', () => {
       const blocks = {};
       for (let y = 63; y <= 65; y++) {
         for (let z = 3; z <= 7; z++) {
-          blocks[posKey(7, y, z)] = { name: 'stone', stateId: 1 };
+          blocks[posKey(7, y, z)] = { stateId: 2532 };
         }
       }
       const chunk = makeChunk(0, 0, blocks);
@@ -104,7 +106,7 @@ describe('perception', () => {
     it('stops at first solid block', () => {
       let cache = createChunkCache();
       const chunk = makeChunk(0, 0, {
-        [posKey(0, 64, 3)]: { name: 'stone', stateId: 1 },
+        [posKey(0, 64, 3)]: { stateId: 2532 },
       });
       cache = setChunk(cache, 0, 0, chunk);
 
@@ -112,7 +114,7 @@ describe('perception', () => {
       const result = direction(cache, { x: 0, y: 64, z: 0 }, 0, 0, 10);
       // Should stop at block at z=3
       assert.equal(result.blocks.length, 3);
-      assert.equal(result.blocks[result.blocks.length - 1].name, 'stone');
+      assert.ok(result.blocks[result.blocks.length - 1].name.includes('2532'));
       assert.equal(result.firstObstacle.dist, 3);
       assert.equal(result.clear, false);
     });
@@ -128,14 +130,14 @@ describe('perception', () => {
     it('detects obstacles', () => {
       let cache = createChunkCache();
       const chunk = makeChunk(0, 0, {
-        [posKey(0, 64, 5)]: { name: 'stone', stateId: 1 },
+        [posKey(0, 64, 5)]: { stateId: 2532 },
       });
       cache = setChunk(cache, 0, 0, chunk);
 
       const result = raycast(cache, 0, 64, 0, 0, 64, 10);
       assert.equal(result.clear, false);
       assert.equal(result.obstacle.z, 5);
-      assert.equal(result.obstacle.name, 'stone');
+      assert.ok(result.obstacle.name.includes('2532'));
     });
 
     it('returns clear for zero-distance path', () => {

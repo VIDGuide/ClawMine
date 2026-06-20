@@ -18,15 +18,15 @@ import {
  * returns { name, stateId, properties }.
  */
 function fakeChunk(cx, cz, blocks = {}) {
-  return {
-    x: cx,
-    z: cz,
-    getBlock(lx, ly, lz) {
-      const key = `${lx},${ly},${lz}`;
-      if (blocks[key]) return blocks[key];
-      return { name: 'air', stateId: 0, properties: {} };
-    },
-  };
+  const subChunks = new Map();
+  for (const [key, val] of Object.entries(blocks)) {
+    const [lx, ly, lz] = key.split(',').map(Number);
+    const cy = Math.floor(ly / 16);
+    if (!subChunks.has(cy)) subChunks.set(cy, new Uint32Array(4096));
+    const idx = (lx << 8) | (lz << 4) | (ly & 0xf);
+    subChunks.get(cy)[idx] = val.stateId ?? 0;
+  }
+  return { x: cx, z: cz, subChunks };
 }
 
 describe('chunks', () => {
@@ -86,19 +86,20 @@ describe('chunks', () => {
 
     it('queries blocks from loaded chunks', () => {
       let cache = createChunkCache();
-      const block = { name: 'stone', stateId: 1, properties: {} };
+      const block = { stateId: 1 };
       const chunk = fakeChunk(0, 0, { '0,64,0': block });
       cache = setChunk(cache, 0, 0, chunk);
-      assert.deepEqual(getBlock(cache, 0, 64, 0), block);
+      const result = getBlock(cache, 0, 64, 0);
+      assert.equal(result.stateId, 1);
     });
 
     it('maps negative world coords to local coords', () => {
       let cache = createChunkCache();
-      const block = { name: 'deepslate', stateId: 2, properties: {} };
-      const chunk = fakeChunk(-1, -1, { '15,0,15': block });
+      const chunk = fakeChunk(-1, -1, { '15,0,15': { stateId: 2 } });
       cache = setChunk(cache, -1, -1, chunk);
       // World coord (-1, 0, -1) maps to local (15, 0, 15) in chunk -1,-1
-      assert.deepEqual(getBlock(cache, -1, 0, -1), block);
+      const result = getBlock(cache, -1, 0, -1);
+      assert.equal(result.stateId, 2);
     });
   });
 
@@ -108,19 +109,18 @@ describe('chunks', () => {
       assert.deepEqual(getBlocks(cache, 0, 0, 0, 10, 10, 10), []);
     });
 
-    it('filters by block name', () => {
+    it('returns blocks in area', () => {
       let cache = createChunkCache();
-      const diamond = { name: 'diamond_ore', stateId: 3, properties: {} };
-      const stone = { name: 'stone', stateId: 1, properties: {} };
       const chunk = fakeChunk(0, 0, {
-        '5,64,5': diamond,
-        '6,64,6': stone,
+        '5,64,5': { stateId: 3 },
+        '6,64,6': { stateId: 1 },
       });
       cache = setChunk(cache, 0, 0, chunk);
 
-      const results = getBlocks(cache, 0, 64, 0, 15, 64, 15, 'diamond_ore');
-      assert.equal(results.length, 1);
-      assert.equal(results[0].name, 'diamond_ore');
+      const results = getBlocks(cache, 0, 64, 0, 15, 64, 15);
+      assert.equal(results.length, 2);
+      const ids = results.map(r => r.stateId).sort();
+      assert.deepEqual(ids, [1, 3]);
     });
   });
 

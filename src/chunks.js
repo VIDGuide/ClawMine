@@ -1,10 +1,15 @@
 /**
  * ClawMine — Block/chunk awareness
  *
- * Stores chunk metadata and provides block queries.
- * Full chunk decode (using prismarine-chunk) disabled due to
- * CJS/ESM module cache collision with bedrock-protocol.
- * Chunks are tracked by position but blocks are not queryable.
+ * Stores decoded chunks and provides block queries.
+ * Chunks contain subChunks maps: cy → Uint32Array(4096) of block state IDs.
+ * State IDs are numeric values from the Bedrock block state registry.
+ *
+ * Known state IDs (Bedrock 1.21):
+ *   air    → 12530
+ *   stone  → 2532
+ *   iron_ore → 7336
+ *   diamond_ore → ???
  */
 
 /**
@@ -71,29 +76,46 @@ export function getChunkAt(cache, x, z) {
   return getChunk(cache, Math.floor(x / 16), Math.floor(z / 16));
 }
 
+// Bedrock 1.21 known block state IDs
+const AIR_ID = 12530;
+const CAVE_AIR_ID = 0; // cave_air may not exist in bedrock
+
+function isAir(block) {
+  return !block || !block.stateId || block.stateId === AIR_ID;
+}
+
+function isSolid(block) {
+  return block && block.stateId !== AIR_ID;
+}
+
+function isLiquid(block) {
+  // Water/lava check by state ID range (approximate)
+  // flowing_water: 7439-7454, lava: 5406-5421
+  if (!block) return false;
+  const id = block.stateId;
+  return (id >= 5406 && id <= 5421) || (id >= 7439 && id <= 7454);
+}
+
 /**
  * Query a single block at world coordinates.
- * Returns null if chunk not loaded, or { name, stateId }.
+ * Returns null if chunk not loaded, or { stateId }.
  */
 export function getBlock(cache, x, y, z) {
   const chunk = getChunkAt(cache, x, z);
-  if (!chunk) return null;
+  if (!chunk || !chunk.subChunks) return null;
+
+  const cy = Math.floor(y / 16);
+  const sub = chunk.subChunks.get(cy);
+  if (!sub) return null;
 
   const lx = ((x % 16) + 16) % 16;
   const lz = ((z % 16) + 16) % 16;
-  const ly = y;
+  const ly = y & 0xf;
+  const idx = (lx << 8) | (lz << 4) | ly;
+  const stateId = sub[idx];
 
-  try {
-    const block = chunk.getBlock(lx, ly, lz);
-    if (!block) return null;
-    return {
-      name: block.name,
-      stateId: block.stateId ?? null,
-      properties: block.properties ?? null,
-    };
-  } catch {
-    return null;
-  }
+  if (!stateId) return null;
+  return { stateId, name: `state_${stateId}`, properties: {} };
 }
 
 /**
@@ -177,19 +199,12 @@ export function scan(cache, cx, cy, cz, radiusX = 3, radiusY = 2, radiusZ = 3) {
     for (let x = minX; x <= maxX; x++) {
       for (let z = minZ; z <= maxZ; z++) {
         const block = getBlock(cache, x, y, z);
-        if (block && block.name !== 'air') {
-          const entry = { x, y, z, name: block.name };
+        if (!isAir(block)) {
+          const entry = { x, y, z, stateId: block.stateId, name: `state_${block.stateId}` };
           row.push(entry);
 
-          // Track notable blocks
-          const low = block.name.toLowerCase();
-          if (low.includes('ore') || low.includes('chest') || low.includes('crafting') ||
-              low.includes('furnace') || low.includes('door') || low.includes('bed') ||
-              low.includes('torch') || low.includes('ladder') || low.includes('water') ||
-              low.includes('lava') || low.includes('tnt') || low.includes('anvil') ||
-              low.includes('enchanting') || low.includes('brewing') || low.includes('beacon')) {
-            notable.push(entry);
-          }
+          // Track notable blocks — all non-air blocks are notable
+          notable.push(entry);
         }
       }
     }
@@ -204,9 +219,9 @@ export function scan(cache, cx, cy, cz, radiusX = 3, radiusY = 2, radiusZ = 3) {
   for (let x = minX; x <= maxX; x++) {
     for (let z = minZ; z <= maxZ; z++) {
       const bFloor = getBlock(cache, x, floorY, z);
-      if (bFloor && bFloor.name !== 'air') floor.push({ x, y: floorY, z, name: bFloor.name });
+      if (!isAir(bFloor)) floor.push({ x, y: floorY, z, stateId: bFloor.stateId });
       const bCeil = getBlock(cache, x, ceilingY, z);
-      if (bCeil && bCeil.name !== 'air') ceiling.push({ x, y: ceilingY, z, name: bCeil.name });
+      if (!isAir(bCeil)) ceiling.push({ x, y: ceilingY, z, stateId: bCeil.stateId });
     }
   }
 
@@ -215,15 +230,15 @@ export function scan(cache, cx, cy, cz, radiusX = 3, radiusY = 2, radiusZ = 3) {
   for (let yg = minY; yg <= maxY; yg++) {
     for (let xg = minX; xg <= maxX; xg++) {
       const bNorth = getBlock(cache, xg, yg, minZ);
-      if (bNorth && bNorth.name !== 'air') walls.north.push({ x: xg, y: yg, z: minZ, name: bNorth.name });
+      if (!isAir(bNorth)) walls.north.push({ x: xg, y: yg, z: minZ, stateId: bNorth.stateId });
       const bSouth = getBlock(cache, xg, yg, maxZ);
-      if (bSouth && bSouth.name !== 'air') walls.south.push({ x: xg, y: yg, z: maxZ, name: bSouth.name });
+      if (!isAir(bSouth)) walls.south.push({ x: xg, y: yg, z: maxZ, stateId: bSouth.stateId });
     }
     for (let zg = minZ; zg <= maxZ; zg++) {
       const bWest = getBlock(cache, minX, yg, zg);
-      if (bWest && bWest.name !== 'air') walls.west.push({ x: minX, y: yg, z: zg, name: bWest.name });
+      if (!isAir(bWest)) walls.west.push({ x: minX, y: yg, z: zg, stateId: bWest.stateId });
       const bEast = getBlock(cache, maxX, yg, zg);
-      if (bEast && bEast.name !== 'air') walls.east.push({ x: maxX, y: yg, z: zg, name: bEast.name });
+      if (!isAir(bEast)) walls.east.push({ x: maxX, y: yg, z: zg, stateId: bEast.stateId });
     }
   }
 
@@ -264,11 +279,12 @@ export function direction(cache, pos, yaw, pitch, distance = 10) {
     const by = Math.floor(pos.y + dirY * i * 0.5); // scale vertical slower
     const bz = Math.floor(pos.z + nz * i);
     const block = getBlock(cache, bx, by, bz);
-    const entry = { dist: i, x: bx, y: by, z: bz, name: (block ? block.name : 'unknown') };
+    const stateId = block ? block.stateId : 0;
+    const entry = { dist: i, x: bx, y: by, z: bz, stateId, name: (block ? block.name : 'unknown') };
     blocks.push(entry);
 
     // Stop at first solid block
-    if (block && block.name !== 'air' && !block.name.includes('water') && !block.name.includes('lava')) {
+    if (block && !isAir(block) && !isLiquid(block)) {
       break;
     }
   }
@@ -276,8 +292,8 @@ export function direction(cache, pos, yaw, pitch, distance = 10) {
   return {
     facing: { x: nx, y: dirY, z: nz },
     blocks,
-    clear: blocks.every(b => b.name === 'air' || b.name === 'cave_air'),
-    firstObstacle: blocks.find(b => b.name !== 'air' && b.name !== 'cave_air') || null,
+    clear: blocks.every(b => isAir(b)),
+    firstObstacle: blocks.find(b => !isAir(b)) || null,
   };
 }
 
@@ -303,8 +319,8 @@ export function raycast(cache, ax, ay, az, bx, by, bz) {
     const y = Math.floor(ay + sy * i);
     const z = Math.floor(az + sz * i);
     const block = getBlock(cache, x, y, z);
-    if (block && block.name !== 'air' && block.name !== 'cave_air' &&
-        !block.name.includes('water') && !block.name.includes('lava')) {
+    if (block && !isAir(block) && block.name !== 'cave_air' &&
+        !isLiquid(block)) {
       return { clear: false, distance: i, obstacle: { x, y, z, name: block.name } };
     }
   }

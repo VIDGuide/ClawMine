@@ -4,36 +4,57 @@ import { decodeLevelChunk, decodeSubChunk, applyBlockUpdates, createBlankChunk }
 
 describe('decoder', () => {
   describe('createBlankChunk', () => {
-    it('creates a stub chunk at given coordinates', async () => {
+    it('creates a blank chunk with empty sub-chunks', async () => {
       const chunk = await createBlankChunk(0, 0);
       assert.equal(chunk.x, 0);
       assert.equal(chunk.z, 0);
+      assert.equal(chunk.subChunks.size, 0);
       assert.equal(chunk.decoded, false);
     });
   });
 
   describe('decodeLevelChunk', () => {
-    it('returns stub chunk for any input', async () => {
-      const chunk = await decodeLevelChunk(1, 2, Buffer.alloc(100), 4);
+    it('handles empty payload', async () => {
+      const chunk = await decodeLevelChunk(1, 2, Buffer.alloc(0), -1);
       assert.equal(chunk.x, 1);
       assert.equal(chunk.z, 2);
+      assert.equal(chunk.decoded, false);
+    });
+
+    it('handles null payload', async () => {
+      const chunk = await decodeLevelChunk(0, 0, null, -1);
       assert.equal(chunk.decoded, false);
     });
   });
 
   describe('decodeSubChunk', () => {
-    it('returns chunk as-is', async () => {
-      const chunk = { x: 0, z: 0 };
-      const result = await decodeSubChunk(chunk, 0, Buffer.alloc(10));
-      assert.equal(result, chunk);
+    it('throws when chunk is null', async () => {
+      try {
+        await decodeSubChunk(null, 0, Buffer.alloc(10));
+        assert.fail('Should have thrown');
+      } catch (e) {
+        assert.ok(e.message.includes('Chunk must be created'));
+      }
     });
   });
 
   describe('applyBlockUpdates', () => {
-    it('does nothing (stub)', () => {
-      applyBlockUpdates({}, []);
+    it('does nothing with empty/null updates', () => {
+      applyBlockUpdates({ subChunks: new Map() }, []);
       applyBlockUpdates(null, null);
-      // Should not throw
+    });
+
+    it('updates individual blocks', () => {
+      const subChunks = new Map();
+      subChunks.set(0, new Uint32Array(4096));
+      const chunk = { x: 0, z: 0, subChunks };
+
+      applyBlockUpdates(chunk, [
+        { x: 5, y: 0, z: 5, block: { stateId: 2532 } },
+      ]);
+
+      const idx = (5 << 8) | (5 << 4) | 0;
+      assert.equal(subChunks.get(0)[idx], 2532);
     });
   });
 });
