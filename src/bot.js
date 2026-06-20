@@ -19,7 +19,7 @@ import { createState, applyMovePlayer, setPosition, setRotation } from './state.
 import { faceAngles, walkSteps } from './math.js';
 import { buildMovePlayer, buildPlayerAuthInput, buildChat } from './packets.js';
 import { createEntityTracker, handleAddPlayer, handleAddEntity, handleAddItemEntity, handleMoveEntity, handleRemoveEntity, handlePlayerList, nearbyEntities } from './entities.js';
-import { createChunkCache, setChunk, getBlock, getBlocks, chunkKey, chunkKeyFromPos, chunkStatus, getChunkAt } from './chunks.js';
+import { createChunkCache, setChunk, getBlock, getBlocks, chunkKey, chunkKeyFromPos, chunkStatus, getChunkAt, scan, direction, raycast } from './chunks.js';
 import { decodeLevelChunk, decodeSubChunk, applyBlockUpdates } from './decoder.js';
 
 const HOST = process.env.HOST || '192.168.1.10';
@@ -239,6 +239,27 @@ function handle(cmd) {
 
       case 'chunks':
         return ok({ chunks: chunkStatus(chunkCache, state.pos?.x ?? 0, state.pos?.z ?? 0, cmd.radius ?? 4) });
+
+      case 'scan': {
+        if (!state.pos) return ok({ error: 'No position' });
+        const r = cmd.radius ?? 4;
+        const ry = cmd.radiusY ?? 2;
+        const result = scan(chunkCache, state.pos.x, state.pos.y, state.pos.z, r, ry, r);
+        return ok(result);
+      }
+
+      case 'look': {
+        if (!state.pos) return ok({ error: 'No position' });
+        const dist = cmd.distance ?? 10;
+        const result = direction(chunkCache, state.pos, state.yaw, state.pitch, dist);
+        return ok(result);
+      }
+
+      case 'raycast': {
+        if (!state.pos || cmd.x === undefined) return ok({ error: 'Need position and target' });
+        const result = raycast(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
+        return ok(result);
+      }
 
       default:
         return ok({ error: `Unknown action: ${cmd.action}` });
