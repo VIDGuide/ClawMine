@@ -2,9 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeSubChunkBuffer, getLocalBlock, extractSubChunks } from '../src/blocks.js';
 
-function encodeZigZagVarInt(val) {
-  const zigzag = (val << 1) ^ (val >> 31);
-  let tmp = zigzag >>> 0;
+function encodeVarInt(val) {
+  let tmp = val >>> 0;
   const result = [];
   while (tmp >= 0x80) {
     result.push((tmp & 0x7f) | 0x80);
@@ -12,6 +11,10 @@ function encodeZigZagVarInt(val) {
   }
   result.push(tmp & 0x7f);
   return Buffer.from(result);
+}
+
+function encodeZigZagVarInt(val) {
+  return encodeVarInt(((val << 1) ^ (val >> 31)) >>> 0);
 }
 
 /**
@@ -70,7 +73,7 @@ function buildSubChunk(blocks, version = 9) {
 
   const sorted = [...paletteMap.entries()].sort((a, b) => a[1] - b[1]);
   for (const [stateId] of sorted) {
-    parts.push(encodeZigZagVarInt(stateId));
+    parts.push(encodeVarInt(stateId));
   }
 
   return Buffer.concat(parts);

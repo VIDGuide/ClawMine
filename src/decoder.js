@@ -1,33 +1,35 @@
 /**
  * ClawMine — Chunk decoder
  *
- * Decodes Bedrock level_chunk and subchunk packet buffers into
- * a flat block state ID array. Uses standalone sub-chunk parser.
+ * Decodes Bedrock level_chunk and subchunk packet buffers.
+ * Level chunks with -2 sub-chunks are metadata-only (sub-chunks
+ * must be requested via subchunk_request). Sub-chunk packets
+ * are decoded using the standalone block decoder.
  */
 
-import { decodeSubChunkBuffer, getLocalBlock, extractSubChunks } from './blocks.js';
+import { decodeSubChunkBuffer, extractSubChunks } from './blocks.js';
 
 export async function decodeLevelChunk(cx, cz, payload, subChunkCount) {
   const chunk = {
     x: cx, z: cz,
-    subChunks: new Map(), // cy → Uint32Array(4096)
+    subChunks: new Map(),
     subChunkCount, decoded: false,
     rawSize: payload?.length || 0,
   };
 
-  if (subChunkCount === -1 || !payload || payload.length < 2) {
+  if (subChunkCount === -1 || subChunkCount === -2 || !payload || payload.length < 2) {
+    // -1/-2: payload is biome data only; sub-chunks come via SubChunkRequest
     return chunk;
   }
 
   try {
-    const subChunkBuffers = extractSubChunks(payload);
+    const subChunkBuffers = extractSubChunks(payload, subChunkCount);
     for (let i = 0; i < subChunkBuffers.length; i++) {
       const { blocks } = decodeSubChunkBuffer(subChunkBuffers[i].buffer);
       chunk.subChunks.set(i, blocks);
     }
     chunk.decoded = true;
   } catch (e) {
-    console.error(`[DECODE] chunk (${cx}, ${cz}): ${e.message}`);
     chunk.decodeError = e.message;
   }
 

@@ -63,11 +63,11 @@ export function decodeSubChunkBuffer(buffer) {
       words[i] = stream.readUInt32LE();
     }
 
-    // Read palette (zigzag varint count, then zigzag varint entries)
+    // Read palette (zigzag varint count, unsigned varint entries)
     const paletteSize = stream.readZigZagVarInt();
     const palette = new Array(paletteSize);
     for (let i = 0; i < paletteSize; i++) {
-      palette[i] = stream.readZigZagVarInt();
+      palette[i] = stream.readVarInt();
     }
 
     // Decode block indices
@@ -128,7 +128,7 @@ export function extractSubChunks(payload, subChunkCount) {
       stream.skip(wordCount * 4);
 
       const paletteSize = stream.readZigZagVarInt();
-      for (let j = 0; j < paletteSize; j++) stream.readZigZagVarInt();
+      for (let j = 0; j < paletteSize; j++) stream.readVarInt();
     }
 
     subChunks.push({
@@ -161,7 +161,7 @@ class StreamReader {
     this.offset += n;
   }
 
-  readZigZagVarInt() {
+  readVarInt() {
     let result = 0;
     let shift = 0;
     while (true) {
@@ -170,7 +170,12 @@ class StreamReader {
       shift += 7;
       if ((byte & 0x80) === 0) break;
     }
-    return (result >>> 1) ^ -(result & 1);
+    return result >>> 0;
+  }
+
+  readZigZagVarInt() {
+    const raw = this.readVarInt();
+    return (raw >>> 1) ^ -(raw & 1);
   }
 
   readUInt32LE() {

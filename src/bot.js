@@ -116,7 +116,7 @@ client.on('player_list', (pkt) => {
 
 client.on('level_chunk', (pkt) => {
   if (!pkt) return;
-  log(`Chunk at (${pkt.x}, ${pkt.z}) — ${pkt.sub_chunk_count} sub-chunks`);
+  log(`Chunk at (${pkt.x}, ${pkt.z}) — ${pkt.sub_chunk_count} sub-chunks, cache=${pkt.cache_enabled}, dim=${pkt.dimension}, blobs=${pkt.blobs ? pkt.blobs.length : 0}`);
 
   decodeLevelChunk(pkt.x, pkt.z, pkt.payload, pkt.sub_chunk_count)
     .then((chunk) => {
@@ -133,31 +133,67 @@ client.on('level_chunk', (pkt) => {
     });
 });
 
+let _subchunkSerializerPatched = false;
+
+function setupSubchunkSerializer() {
+  if (_subchunkSerializerPatched || !client.serializer) return;
+  _subchunkSerializerPatched = true;
+  
+  const wCtx = client.serializer.proto.writeCtx;
+  const sCtx = client.serializer.proto.sizeOfCtx;
+  
+  // Correct format (from protocol experimentation): dimension → offsets → position
+  wCtx.packet_subchunk_request = function(value, buffer, offset) {
+    offset = wCtx.zigzag32(value.dimension, buffer, offset);
+    offset = wCtx.varint(value.requests.length, buffer, offset);
+    for (let i = 0; i < value.requests.length; i++) {
+      offset = wCtx.i8(value.requests[i].x, buffer, offset);
+      offset = wCtx.i8(value.requests[i].y, buffer, offset);
+      offset = wCtx.i8(value.requests[i].z, buffer, offset);
+    }
+    offset = wCtx.li32(value.origin.x, buffer, offset);
+    offset = wCtx.li32(value.origin.y, buffer, offset);
+    offset = wCtx.li32(value.origin.z, buffer, offset);
+    return offset;
+  };
+  sCtx.packet_subchunk_request = function(value) {
+    return sCtx.zigzag32(value.dimension) + 
+           sCtx.varint(value.requests.length) + 
+           value.requests.length * 3 + 12;
+  };
+}
+
 function requestSubChunks(cx, cz) {
-  // Request sub-chunks around bot's Y position, or default range
   const botY = state.pos?.y ?? 64;
-  const centerScy = Math.floor((botY + 64) / 16); // offset by 64 for min build height -64
-  const minScy = Math.max(0, centerScy - 2);
-  const maxScy = Math.min(23, centerScy + 2);
-
+  const centerSub = Math.floor((botY + 64) / 16);
   const requests = [];
-  for (let dy = minScy; dy <= maxScy; dy++) {
-    requests.push({ dx: 0, dy, dz: 0 });
+  for (let r = -3; r <= 3; r++) {
+    const dy = centerSub + r;
+    if (dy >= -4 && dy <= 19) requests.push({ x: 0, y: dy, z: 0 });
   }
-
-  client.queue('subchunk_request', {
-    dimension: 0,
-    origin: { x: cx, y: 0, z: cz },
-    requests,
-  });
-  log(`Requested ${requests.length} sub-chunks for (${cx}, ${cz}) dy=${minScy}-${maxScy}`);
+  try {
+    setupSubchunkSerializer();
+    client.write('subchunk_request', {
+      dimension: 0,
+      requests: [{ x: 0, y: cx, z: cz }, ...requests],
+      origin: { x: cx, y: -4, z: cz },
+    });
+    log('Rq cx=' + cx + ' cz=' + cz + ' center=' + centerSub + ' count=' + requests.length);
+  } catch(e) { log('Rq err: ' + e.message); }
 }
 
 client.on('subchunk', (pkt) => {
+  log('Subchunk pkt: ' + (pkt ? 'has entries=' + (pkt.entries ? pkt.entries.length : 'missing') + ' cache=' + pkt.cache_enabled : 'null'));
   if (!pkt || !pkt.entries) return;
   for (const entry of pkt.entries) {
-    if (entry.result !== 'success' && entry.result !== 'success_all_air') continue;
-    if (!entry.payload || entry.payload.length === 0) continue;
+    if (entry.result !== 'success' && entry.result !== 'success_all_air') {
+      log('Subchunk entry: result=' + entry.result + ' dx=' + entry.dx + ' dy=' + entry.dy + ' dz=' + entry.dz);
+      continue;
+    }
+    if (!entry.payload || entry.payload.length === 0) {
+      log('Subchunk empty payload at dy=' + entry.dy);
+      continue;
+    }
     const cx = pkt.origin.x + entry.dx;
     const cz = pkt.origin.z + entry.dz;
     const key = chunkKeyFromPos(cx, cz);
@@ -166,7 +202,7 @@ client.on('subchunk', (pkt) => {
       log(`Sub-chunk for unloaded chunk (${cx}, ${cz}), skipping`);
       continue;
     }
-    decodeSubChunk(chunk, entry.dy, Buffer.from(entry.payload))
+    decodeSubChunk(chunk, pkt.origin.y + entry.dy, Buffer.from(entry.payload))
       .then(() => log(`Sub-chunk at (${cx}, ${entry.dy}, ${cz})`))
       .catch((err) => log(`Sub-chunk decode failed: ${err.message}`));
   }
@@ -224,6 +260,15 @@ function handle(cmd) {
         Object.assign(state, setPosition(state, cmd.x, cmd.y, cmd.z));
         if (cmd.yaw !== undefined) Object.assign(state, setRotation(state, cmd.yaw, state.pitch));
         _ignoreMoveUntil = Date.now() + 30000;
+        // Request sub-chunks for chunks near the teleported position
+        const scope = 2;
+        const tx = Math.floor(cmd.x / 16);
+        const tz = Math.floor(cmd.z / 16);
+        for (let dx = -scope; dx <= scope; dx++) {
+          for (let dz = -scope; dz <= scope; dz++) {
+            requestSubChunks(tx + dx, tz + dz);
+          }
+        }
         return ok({ teleported: true, pos: state.pos });
       }
 
