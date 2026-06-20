@@ -41,6 +41,7 @@ let tracker = createEntityTracker();
 let chunkCache = createChunkCache();
 let tickInterval;
 let _ignoreMoveUntil = 0;
+const _startedAt = Date.now();
 
 // ── Client ─────────────────────────────────────────────────
 
@@ -218,7 +219,8 @@ client.on('update_subchunk_blocks', (pkt) => {
   const key = chunkKeyFromPos(pkt.x, pkt.z);
   const chunk = chunkCache.chunks.get(key);
   if (chunk) {
-    applyBlockUpdates(chunk, pkt.blocks);
+    const updated = applyBlockUpdates(chunk, pkt.blocks);
+    chunkCache = setChunk(chunkCache, pkt.x, pkt.z, updated);
   }
 });
 
@@ -380,19 +382,50 @@ function handle(cmd) {
         const wPath = findPath(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
         if (!wPath) return ok({ error: 'No path found' });
 
-        // Walk each waypoint
-        let walked = 0;
+        // Build all steps from path waypoints
+        const allSteps = [];
+        let simPos = { ...state.pos };
         for (const wp of wPath) {
-          if (wp.x === Math.floor(state.pos.x) && wp.y === Math.floor(state.pos.y) && wp.z === Math.floor(state.pos.z)) continue;
-          const steps = walkSteps(state.pos, wp);
+          if (wp.x === Math.floor(simPos.x) && wp.y === Math.floor(simPos.y) && wp.z === Math.floor(simPos.z)) continue;
+          const steps = walkSteps(simPos, wp);
           for (const step of steps) {
-            client.queue('move_player', buildMovePlayer(state, step.x, step.y, step.z));
-            client.queue('player_auth_input', buildPlayerAuthInput(state, step.x, step.y, step.z));
-            state = { ...state, ...setPosition(state, step.x, step.y, step.z) };
-            walked++;
+            allSteps.push(step);
+            simPos = step;
           }
         }
-        return ok({ walked, path: wPath, pos: state.pos });
+
+        if (allSteps.length === 0) return ok({ walked: 0, pos: state.pos });
+
+        // Pace movement at 50ms per step (~20 tps)
+        const walkId = id;
+        let stepIdx = 0;
+        const walkTimer = setInterval(() => {
+          if (stepIdx >= allSteps.length) {
+            clearInterval(walkTimer);
+            output({ type: 'walk_done', id: walkId, walked: allSteps.length, pos: state.pos });
+            return;
+          }
+          const step = allSteps[stepIdx++];
+          client.queue('move_player', buildMovePlayer(state, step.x, step.y, step.z));
+          client.queue('player_auth_input', buildPlayerAuthInput(state, step.x, step.y, step.z));
+          state = { ...state, ...setPosition(state, step.x, step.y, step.z) };
+        }, 50);
+
+        return ok({ walking: true, steps: allSteps.length, path: wPath });
+      }
+
+      case 'status': {
+        return ok({
+          connected: !!client.status,
+          pos: state.pos,
+          uptime: Math.floor((Date.now() - _startedAt) / 1000),
+          chunks: chunkCache.chunks.size,
+          entities: {
+            players: tracker.players.size,
+            mobs: tracker.mobs.size,
+            items: tracker.items.size,
+          },
+        });
       }
 
       default:

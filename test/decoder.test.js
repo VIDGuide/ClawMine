@@ -49,12 +49,14 @@ describe('decoder', () => {
       subChunks.set(0, new Uint32Array(4096));
       const chunk = { x: 0, z: 0, subChunks };
 
-      applyBlockUpdates(chunk, [
+      const updated = applyBlockUpdates(chunk, [
         { x: 5, y: 0, z: 5, block: { stateId: 2532 } },
       ]);
 
       const idx = (5 << 8) | (5 << 4) | 0;
-      assert.equal(subChunks.get(0)[idx], 2532);
+      assert.equal(updated.subChunks.get(0)[idx], 2532);
+      // Original chunk is not mutated
+      assert.equal(subChunks.get(0)[idx], 0);
     });
   });
 });

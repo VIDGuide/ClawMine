@@ -26,7 +26,7 @@ export function createBlockMap() {
  */
 export function createChunkCache() {
   return {
-    /** @type {Map<string, import('prismarine-chunk').Chunk>} */
+    /** @type {Map<string, {x: number, z: number, subChunks: Map<number, Uint32Array>}>} */
     chunks: new Map(),
     /** @type {Set<string>} */  // "x,y,z" of known block entities
     blockEntities: new Set(),

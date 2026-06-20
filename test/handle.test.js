@@ -118,4 +118,23 @@ describe('handle() integration', () => {
       proc.kill();
     }
   });
+
+  it('responds to status command with bot health info', async () => {
+    const proc = spawnBot();
+    try {
+      await readLines(proc, 1);
+      proc.stdin.write('{"action":"status"}\n');
+      const lines = await readLines(proc, 2);
+      const resp = lines.find(l => l.type === 'response');
+      assert.ok(resp);
+      assert.ok('uptime' in resp);
+      assert.ok('chunks' in resp);
+      assert.ok('entities' in resp);
+      assert.equal(resp.entities.players, 0);
+      assert.equal(resp.entities.mobs, 0);
+      assert.equal(resp.chunks, 0);
+    } finally {
+      proc.kill();
+    }
+  });
 });

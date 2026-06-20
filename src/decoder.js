@@ -49,7 +49,9 @@ export async function decodeSubChunk(chunk, cy, buffer) {
 }
 
 export function applyBlockUpdates(chunk, blockUpdates) {
-  if (!chunk || !blockUpdates || !chunk.subChunks) return;
+  if (!chunk || !blockUpdates || !chunk.subChunks) return chunk;
+  const subChunks = new Map(chunk.subChunks);
+  const cloned = new Set(); // track which sub-chunks we've already cloned
   for (const update of blockUpdates) {
     try {
       const cy = Math.floor(update.y / 16);
@@ -57,11 +59,18 @@ export function applyBlockUpdates(chunk, blockUpdates) {
       const lx = (update.x & 0xf);
       const lz = (update.z & 0xf);
       const stateId = update.block?.stateId ?? update.stateId ?? 0;
-      if (!chunk.subChunks.has(cy)) chunk.subChunks.set(cy, new Uint32Array(4096));
+      if (!subChunks.has(cy)) {
+        subChunks.set(cy, new Uint32Array(4096));
+        cloned.add(cy);
+      } else if (!cloned.has(cy)) {
+        subChunks.set(cy, new Uint32Array(subChunks.get(cy)));
+        cloned.add(cy);
+      }
       const idx = (lx << 8) | (lz << 4) | ly;
-      chunk.subChunks.get(cy)[idx] = stateId;
+      subChunks.get(cy)[idx] = stateId;
     } catch { /* skip */ }
   }
+  return { ...chunk, subChunks };
 }
 
 export async function createBlankChunk(cx, cz) {

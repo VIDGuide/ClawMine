@@ -45,21 +45,48 @@ function heuristic(ax, ay, az, bx, by, bz) {
 }
 
 /**
- * Priority queue for A* open set.
+ * Binary heap priority queue for A* open set.
  */
 class PQueue {
   constructor() {
-    this.items = [];
+    this.heap = [];
   }
   push(item, priority) {
-    this.items.push({ item, priority });
-    this.items.sort((a, b) => a.priority - b.priority);
+    this.heap.push({ item, priority });
+    this._bubbleUp(this.heap.length - 1);
   }
   pop() {
-    return this.items.shift()?.item;
+    const top = this.heap[0];
+    const last = this.heap.pop();
+    if (this.heap.length > 0 && last) {
+      this.heap[0] = last;
+      this._sinkDown(0);
+    }
+    return top?.item;
   }
   get size() {
-    return this.items.length;
+    return this.heap.length;
+  }
+  _bubbleUp(i) {
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.heap[i].priority >= this.heap[parent].priority) break;
+      [this.heap[i], this.heap[parent]] = [this.heap[parent], this.heap[i]];
+      i = parent;
+    }
+  }
+  _sinkDown(i) {
+    const n = this.heap.length;
+    while (true) {
+      let smallest = i;
+      const l = 2 * i + 1;
+      const r = 2 * i + 2;
+      if (l < n && this.heap[l].priority < this.heap[smallest].priority) smallest = l;
+      if (r < n && this.heap[r].priority < this.heap[smallest].priority) smallest = r;
+      if (smallest === i) break;
+      [this.heap[i], this.heap[smallest]] = [this.heap[smallest], this.heap[i]];
+      i = smallest;
+    }
   }
 }
 
