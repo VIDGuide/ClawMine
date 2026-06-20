@@ -10,12 +10,17 @@ let _chunkPromise = null;
 
 async function getChunkClass() {
   if (_Chunk) return _Chunk;
-  
-  // Deduplicate concurrent calls — share the same in-flight promise
+
   if (!_chunkPromise) {
     _chunkPromise = (async () => {
+      // Load registry + data ourselves, then pass object to prismarine-chunk
+      // (version-string lookup corrupts minecraft-data's internal state)
       const { default: loader } = await import('prismarine-chunk');
-      _Chunk = loader('bedrock_1.21');
+      const { createRequire } = await import('node:module');
+      const _require = createRequire(import.meta.url);
+      const reg = _require('prismarine-registry');
+      const registry = reg('bedrock_1.21');
+      _Chunk = loader(registry);
       return _Chunk;
     })();
   }
@@ -23,8 +28,8 @@ async function getChunkClass() {
   try {
     return await _chunkPromise;
   } catch (e) {
-    _chunkPromise = null; // Allow retry on next call
-    throw new Error(`Failed to load prismarine-chunk${e.message ? ': ' + e.message : ''}`);
+    _chunkPromise = null;
+    throw new Error(`Failed to init chunk class${e.message ? ': ' + e.message : ''}`);
   }
 }
 
