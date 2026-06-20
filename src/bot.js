@@ -19,7 +19,8 @@ import { createState, applyMovePlayer, setPosition, setRotation } from './state.
 import { faceAngles, walkSteps } from './math.js';
 import { buildMovePlayer, buildPlayerAuthInput, buildChat } from './packets.js';
 import { createEntityTracker, handleAddPlayer, handleAddEntity, handleAddItemEntity, handleMoveEntity, handleRemoveEntity, handlePlayerList, nearbyEntities } from './entities.js';
-import { createChunkCache, setChunk, getBlock, getBlocks, chunkKey, chunkStatus, getChunkAt } from './chunks.js';
+import { createChunkCache, setChunk, getBlock, getBlocks, chunkKey, chunkKeyFromPos, chunkStatus, getChunkAt } from './chunks.js';
+import { decodeLevelChunk, decodeSubChunk, applyBlockUpdates } from './decoder.js';
 
 const HOST = process.env.HOST || '192.168.1.10';
 const PORT = parseInt(process.env.PORT || '19132');
@@ -108,7 +109,42 @@ client.on('player_list', (pkt) => {
 client.on('level_chunk', (pkt) => {
   if (!pkt) return;
   log(`Chunk at (${pkt.x}, ${pkt.z}) — ${pkt.sub_chunk_count} sub-chunks`);
-  // Decoder will go here once prismarine-chunk integration is built
+
+  decodeLevelChunk(pkt.x, pkt.z, pkt.payload, pkt.sub_chunk_count)
+    .then((chunk) => {
+      chunkCache = setChunk(chunkCache, pkt.x, pkt.z, chunk);
+      log(`Decoded chunk (${pkt.x}, ${pkt.z})`);
+    })
+    .catch((err) => {
+      log(`Chunk decode failed: ${err.message}`);
+    });
+});
+
+client.on('subchunk', (pkt) => {
+  if (!pkt || !pkt.entries) return;
+  for (const entry of pkt.entries) {
+    const cx = pkt.origin.x + entry.dx;
+    const cz = pkt.origin.z + entry.dz;
+    const key = chunkKeyFromPos(cx, cz);
+    let chunk = chunkCache.chunks.get(key);
+    if (!chunk) {
+      const Chunk = null; // Will be created on level_chunk
+      log(`Sub-chunk for unloaded chunk (${cx}, ${cz}), skipping`);
+      continue;
+    }
+    decodeSubChunk(chunk, entry.dy, Buffer.from(entry.payload))
+      .then(() => log(`Sub-chunk at (${cx}, ${entry.dy}, ${cz})`))
+      .catch((err) => log(`Sub-chunk decode failed: ${err.message}`));
+  }
+});
+
+client.on('update_subchunk_blocks', (pkt) => {
+  if (!pkt) return;
+  const key = chunkKeyFromPos(pkt.x, pkt.z);
+  const chunk = chunkCache.chunks.get(key);
+  if (chunk) {
+    applyBlockUpdates(chunk, pkt.blocks);
+  }
 });
 
 // ── Messages ──────────────────────────────────────────────
