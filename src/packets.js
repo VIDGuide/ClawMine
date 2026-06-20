@@ -23,9 +23,7 @@ export function buildMovePlayer(state, x, y, z, pitch, yaw, mode = 'normal') {
     tick: 0n,
   };
 
-  if (mode === 'teleport') {
-    pkt.teleport = { cause: 'command', source_entity_type: 'player' };
-  }
+  // Teleport fields handled by protocol switch
 
   return pkt;
 }
