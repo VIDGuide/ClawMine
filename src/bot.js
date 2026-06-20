@@ -58,6 +58,14 @@ client.on('spawn', () => {
   state.spawned = true;
   output({ type: 'spawn' });
   log('Spawned');
+  
+  // Tick sync keepalive — library skips this for versions >1.20.80
+  setInterval(() => {
+    client.queue('tick_sync', {
+      request_time: BigInt(Date.now()),
+      response_time: 0n,
+    });
+  }, 2000);
 });
 
 client.on('error', (err) => log('Error:', err.message));
