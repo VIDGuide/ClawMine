@@ -20,6 +20,7 @@ import { faceAngles, walkSteps } from './math.js';
 import { buildMovePlayer, buildPlayerAuthInput, buildChat } from './packets.js';
 import { createEntityTracker, handleAddPlayer, handleAddEntity, handleAddItemEntity, handleMoveEntity, handleRemoveEntity, handlePlayerList, nearbyEntities } from './entities.js';
 import { createChunkCache, setChunk, getBlock, getBlocks, chunkKey, chunkKeyFromPos, chunkStatus, getChunkAt, scan, direction, raycast } from './chunks.js';
+import { findPath } from './pathfinding.js';
 import { decodeLevelChunk, decodeSubChunk, applyBlockUpdates } from './decoder.js';
 
 const HOST = process.env.HOST || '192.168.1.10';
@@ -259,6 +260,33 @@ function handle(cmd) {
         if (!state.pos || cmd.x === undefined) return ok({ error: 'Need position and target' });
         const result = raycast(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
         return ok(result);
+      }
+
+      case 'path': {
+        if (!state.pos || cmd.x === undefined) return ok({ error: 'Need position and target' });
+        const path = findPath(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
+        if (!path) return ok({ error: 'No path found' });
+        return ok({ path, length: path.length, start: state.pos, end: { x: cmd.x, y: cmd.y ?? state.pos.y, z: cmd.z } });
+      }
+
+      case 'walk': {
+        if (!state.pos || cmd.x === undefined) return ok({ error: 'Need target' });
+        const wPath = findPath(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
+        if (!wPath) return ok({ error: 'No path found' });
+
+        // Walk each waypoint
+        let walked = 0;
+        for (const wp of wPath) {
+          if (wp.x === Math.floor(state.pos.x) && wp.y === Math.floor(state.pos.y) && wp.z === Math.floor(state.pos.z)) continue;
+          const steps = walkSteps(state.pos, wp);
+          for (const step of steps) {
+            client.queue('move_player', buildMovePlayer(state, step.x, step.y, step.z));
+            client.queue('player_auth_input', buildPlayerAuthInput(state, step.x, step.y, step.z));
+            Object.assign(state, setPosition(state, step.x, step.y, step.z));
+            walked++;
+          }
+        }
+        return ok({ walked, path: wPath, pos: state.pos });
       }
 
       default:
