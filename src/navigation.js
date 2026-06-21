@@ -236,5 +236,34 @@ function getNeighbors(cache, cx, cy, cz) {
     }
   }
 
+  // Diagonal movement (cost √2 ≈ 1.414) — both corner blocks must be passable
+  const diags = [[1, 1], [-1, 1], [1, -1], [-1, -1]];
+  for (const [dx, dz] of diags) {
+    const nx = cx + dx, nz = cz + dz;
+    // Both intermediate corners must be passable (prevent wall-clipping)
+    if (!bodyFree(cache, cx + dx, cy, cz)) continue;
+    if (!bodyFree(cache, cx, cy, cz + dz)) continue;
+    // Flat diagonal
+    if (canStandOn(cache, nx, cy, nz) && bodyFree(cache, nx, cy, nz)) {
+      moves.push({ x: nx, y: cy, z: nz, cost: 1.414 });
+      continue;
+    }
+    // Diagonal step up (cost 2.1)
+    const headAboveDiag = getBlock(cache, cx, cy + 2, cz);
+    if ((isAir(headAboveDiag) || classifyBlock(headAboveDiag).passable) &&
+        canStandOn(cache, nx, cy + 1, nz) && bodyFree(cache, nx, cy + 1, nz)) {
+      moves.push({ x: nx, y: cy + 1, z: nz, cost: 2.1 });
+      continue;
+    }
+    // Diagonal fall 1 block (cost 2.0)
+    const fy = cy - 1;
+    if (canStandOn(cache, nx, fy, nz) && bodyFree(cache, nx, fy, nz)) {
+      const mid = getBlock(cache, nx, cy, nz);
+      if (!mid || !classifyBlock(mid).solid) {
+        moves.push({ x: nx, y: fy, z: nz, cost: 2.0 });
+      }
+    }
+  }
+
   return moves;
 }

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMovePlayer, buildPlayerAuthInput, buildChat } from '../src/packets.js';
+import { buildMovePlayer, buildPlayerAuthInput, buildChat, buildPlayerAction, buildItemUseTransaction, buildItemUseOnEntityTransaction, buildItemReleaseTransaction } from '../src/packets.js';
 import { createState, setPosition, setRotation } from '../src/state.js';
 
 describe('buildMovePlayer', () => {
@@ -86,5 +86,104 @@ describe('buildChat', () => {
     const pkt = buildChat('Hi', 'raw');
     assert.equal(typeof pkt.xuid, 'string');
     assert.equal(typeof pkt.platform_chat_id, 'string');
+  });
+});
+
+describe('buildPlayerAction', () => {
+  it('builds a start_break action', () => {
+    const pkt = buildPlayerAction(42, 'start_break', { x: 10, y: 64, z: 20 }, { x: 10, y: 64, z: 20 }, 1);
+    assert.equal(pkt.runtime_entity_id, 42);
+    assert.equal(pkt.action, 'start_break');
+    assert.deepEqual(pkt.position, { x: 10, y: 64, z: 20 });
+    assert.deepEqual(pkt.result_position, { x: 10, y: 64, z: 20 });
+    assert.equal(pkt.face, 1);
+  });
+
+  it('defaults position and face', () => {
+    const pkt = buildPlayerAction(1, 'drop_item');
+    assert.deepEqual(pkt.position, { x: 0, y: 0, z: 0 });
+    assert.deepEqual(pkt.result_position, { x: 0, y: 0, z: 0 });
+    assert.equal(pkt.face, 0);
+  });
+});
+
+describe('buildItemUseTransaction', () => {
+  it('builds a click_block transaction', () => {
+    const pkt = buildItemUseTransaction('click_block', 'player_input', { x: 5, y: 60, z: 5 }, 1, 0, { network_id: 318 }, { x: 1, y: 64, z: 1 }, { x: 0.5, y: 0.5, z: 0.5 }, 123);
+    const t = pkt.transaction;
+    assert.equal(t.transaction_type, 'item_use');
+    assert.deepEqual(t.legacy, { type: 'none' });
+    assert.deepEqual(t.actions, []);
+    assert.equal(t.transaction_data.action_type, 'click_block');
+    assert.equal(t.transaction_data.trigger_type, 'player_input');
+    assert.deepEqual(t.transaction_data.block_position, { x: 5, y: 60, z: 5 });
+    assert.equal(t.transaction_data.face, 1);
+    assert.equal(t.transaction_data.hotbar_slot, 0);
+    assert.deepEqual(t.transaction_data.held_item, { network_id: 318 });
+    assert.equal(t.transaction_data.block_runtime_id, 123);
+    assert.equal(t.transaction_data.client_prediction, 'success');
+    assert.equal(t.transaction_data.client_cooldown_state, 'off');
+  });
+
+  it('builds a break_block transaction', () => {
+    const pkt = buildItemUseTransaction('break_block', 'player_input', { x: 0, y: 0, z: 0 }, 0, 0, { network_id: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, 0);
+    assert.equal(pkt.transaction.transaction_data.action_type, 'break_block');
+  });
+});
+
+describe('buildItemUseOnEntityTransaction', () => {
+  it('builds an attack transaction', () => {
+    const pkt = buildItemUseOnEntityTransaction(99, 'attack', 0, { network_id: 307 }, { x: 1, y: 64, z: 1 }, { x: 2, y: 64, z: 2 });
+    const t = pkt.transaction;
+    assert.equal(t.transaction_type, 'item_use_on_entity');
+    assert.deepEqual(t.legacy, { type: 'none' });
+    assert.deepEqual(t.actions, []);
+    assert.equal(t.transaction_data.entity_runtime_id, 99);
+    assert.equal(t.transaction_data.action_type, 'attack');
+    assert.equal(t.transaction_data.hotbar_slot, 0);
+    assert.deepEqual(t.transaction_data.held_item, { network_id: 307 });
+  });
+
+  it('builds an interact transaction', () => {
+    const pkt = buildItemUseOnEntityTransaction(50, 'interact', 1, { network_id: 0 }, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
+    assert.equal(pkt.transaction.transaction_data.action_type, 'interact');
+  });
+});
+
+describe('buildItemReleaseTransaction', () => {
+  it('builds a consume transaction', () => {
+    const pkt = buildItemReleaseTransaction('consume', 0, { network_id: 260 }, { x: 1, y: 65, z: 1 });
+    const t = pkt.transaction;
+    assert.equal(t.transaction_type, 'item_release');
+    assert.deepEqual(t.legacy, { type: 'none' });
+    assert.deepEqual(t.actions, []);
+    assert.equal(t.transaction_data.action_type, 'consume');
+    assert.equal(t.transaction_data.hotbar_slot, 0);
+    assert.deepEqual(t.transaction_data.held_item, { network_id: 260 });
+    assert.deepEqual(t.transaction_data.head_pos, { x: 1, y: 65, z: 1 });
+  });
+
+  it('builds a release transaction', () => {
+    const pkt = buildItemReleaseTransaction('release', 2, { network_id: 344 }, { x: 0, y: 64, z: 0 });
+    assert.equal(pkt.transaction.transaction_data.action_type, 'release');
+    assert.equal(pkt.transaction.transaction_data.hotbar_slot, 2);
+  });
+});
+
+describe('buildPlayerAuthInput sprint flag', () => {
+  const state = createState();
+
+  it('sprint flags are false by default', () => {
+    const pkt = buildPlayerAuthInput(state, 0, 64, 0);
+    assert.equal(pkt.input_data.sprinting, false);
+    assert.equal(pkt.input_data.sprint_down, false);
+    assert.equal(pkt.input_data.start_sprinting, false);
+  });
+
+  it('sprint flags are set when opts.sprinting=true', () => {
+    const pkt = buildPlayerAuthInput(state, 0, 64, 0, undefined, undefined, 'mouse', { sprinting: true });
+    assert.equal(pkt.input_data.sprinting, true);
+    assert.equal(pkt.input_data.sprint_down, true);
+    assert.equal(pkt.input_data.start_sprinting, true);
   });
 });

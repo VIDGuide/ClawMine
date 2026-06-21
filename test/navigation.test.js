@@ -204,3 +204,50 @@ describe('findPath', () => {
     assert.equal(result, null, 'Should not path through lava');
   });
 });
+
+describe('diagonal pathfinding', () => {
+  it('takes a diagonal path when open terrain', () => {
+    // 10x10 flat grid
+    const cache = flatCache(63, 12);
+    // Path from (0,64,0) to (5,64,5) — should use diagonals
+    const result = findPath(cache, 0, 64, 0, 5, 64, 5);
+    assert.ok(result, 'path should be found');
+    // With diagonals, path length should be ~5 steps, not ~10
+    assert.ok(result.path.length <= 7, `path length ${result.path.length} should be ≤7 with diagonals`);
+  });
+
+  it('diagonal NOT taken when one corner is blocked', () => {
+    let cache = createChunkCache();
+    const blocks = {};
+    // Flat floor
+    for (let x = -5; x <= 5; x++) {
+      for (let z = -5; z <= 5; z++) {
+        blocks[posKey(x, 63, z)] = { stateId: STONE };
+      }
+    }
+    // Wall at (1, 64, 0) — blocks the X corner of the (1,1) diagonal
+    blocks[posKey(1, 64, 0)] = { stateId: STONE };
+    blocks[posKey(1, 65, 0)] = { stateId: STONE };
+    cache = setChunk(cache, 0, 0, makeChunk(0, 0, blocks));
+
+    const result = findPath(cache, 0, 64, 0, 1, 64, 1);
+    assert.ok(result, 'path found around wall');
+    // Should not cut through the blocked corner
+    const hasDiag = result.path.some((p, i) => {
+      if (i === 0) return false;
+      const prev = result.path[i - 1];
+      return Math.abs(p.x - prev.x) === 1 && Math.abs(p.z - prev.z) === 1 &&
+             p.x === 1 && p.y === 64 && p.z === 1;
+    });
+    // The direct diagonal (0→1, 0→1) should NOT appear if the X-corner is blocked
+    assert.ok(!hasDiag || result.path.length > 2, 'should not clip through wall corner');
+  });
+
+  it('diagonal path is shorter than cardinal-only path to same destination', () => {
+    const cache = flatCache(63, 20);
+    const result = findPath(cache, 0, 64, 0, 10, 64, 10);
+    assert.ok(result, 'path found');
+    // Diagonal path to (10,10) is ~10 steps; cardinal would be ~20
+    assert.ok(result.path.length <= 13, `diagonal path length ${result.path.length} should be ≤13`);
+  });
+});

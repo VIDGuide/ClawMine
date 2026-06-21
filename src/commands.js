@@ -215,6 +215,8 @@ export function handle(cmd, ctx, outputFn) {
 
         const walkId = id;
         let stepIdx = 0;
+        const sprint = cmd.sprint === true;
+        const stepMs = sprint ? 38 : 50;
         const walkTimer = setInterval(() => {
           if (stepIdx >= allSteps.length) {
             clearInterval(walkTimer);
@@ -224,10 +226,10 @@ export function handle(cmd, ctx, outputFn) {
           }
           const step = allSteps[stepIdx++];
           ctx.client.queue('move_player', buildMovePlayer(ctx.state, step.x, step.y, step.z));
-          ctx.client.queue('player_auth_input', buildPlayerAuthInput(ctx.state, step.x, step.y, step.z));
+          ctx.client.queue('player_auth_input', buildPlayerAuthInput(ctx.state, step.x, step.y, step.z, undefined, undefined, 'mouse', { sprinting: sprint }));
           ctx.state = { ...ctx.state, ...setPosition(ctx.state, step.x, step.y, step.z) };
           ctx.getActiveWalk().stepIdx = stepIdx;
-        }, 50);
+        }, stepMs);
 
         ctx.setActiveWalk({ timer: walkTimer, id: walkId, steps: allSteps.length, stepIdx: 0, allSteps });
         return ok({ walking: true, steps: allSteps.length, path: wPath });
