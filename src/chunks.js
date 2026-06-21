@@ -104,7 +104,7 @@ export function getBlock(cache, x, y, z) {
   const chunk = getChunkAt(cache, x, z);
   if (!chunk || !chunk.subChunks) return null;
 
-  const cy = Math.floor((y + 64) / 16);
+  const cy = Math.floor(y / 16);
   const sub = chunk.subChunks.get(cy);
   if (!sub) return null;
   // 'air' sentinel means server confirmed this sub-chunk is entirely air

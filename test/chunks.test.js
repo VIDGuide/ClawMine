@@ -21,7 +21,7 @@ function fakeChunk(cx, cz, blocks = {}) {
   const subChunks = new Map();
   for (const [key, val] of Object.entries(blocks)) {
     const [lx, ly, lz] = key.split(',').map(Number);
-    const cy = Math.floor((ly + 64) / 16);
+    const cy = Math.floor(ly / 16);
     if (!subChunks.has(cy)) subChunks.set(cy, new Uint32Array(4096));
     const idx = (lx << 8) | (lz << 4) | (ly & 0xf);
     subChunks.get(cy)[idx] = val.stateId ?? 0;
@@ -105,8 +105,8 @@ describe('chunks', () => {
     it('returns air object for air sentinel sub-chunks', () => {
       let cache = createChunkCache();
       const chunk = { x: 0, z: 0, subChunks: new Map() };
-      // cy for Y=133 is Math.floor((133+64)/16) = 12
-      chunk.subChunks.set(12, 'air');
+      // cy for Y=133 is Math.floor(133/16) = 8
+      chunk.subChunks.set(8, 'air');
       cache = setChunk(cache, 0, 0, chunk);
       const result = getBlock(cache, 0, 133, 0);
       assert.notEqual(result, null);

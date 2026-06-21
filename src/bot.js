@@ -27,6 +27,7 @@ import { decodeSubChunkBuffer } from './blocks.js';
 import { decodeLevelChunk, applyBlockUpdates } from './decoder.js';
 import { createChatConfig, processIncoming } from './chat.js';
 import { titleFor, uuidFor, count as emoteCount } from './emotes.js';
+import { createPlayerRoster, processPlayerList, processPlayerAppear, processPlayerDisappear, createProximityTracker, checkProximity, removeFromProximity } from './players.js';
 
 const HOST = process.env.HOST || '192.168.1.10';
 const PORT = parseInt(process.env.PORT || '19132');
@@ -45,6 +46,8 @@ log(`Connecting to ${HOST}:${PORT} as ${USERNAME} (offline: ${OFFLINE})`);
 let state = createState();
 let tracker = createEntityTracker();
 let chunkCache = createChunkCache();
+let roster = createPlayerRoster();
+let proxTracker = createProximityTracker();
 let tickInterval;
 let _ignoreMoveUntil = 0;
 const _startedAt = Date.now();
@@ -128,12 +131,27 @@ client.on('move_player', (pkt) => {
   // (prevents stale server position from overwriting)
   const updated = applyMovePlayer(state, pkt);
   state = { ...state, ...updated };
+
+  // Re-check proximity when bot position changes
+  if (state.pos && tracker.players.size > 0) {
+    const players = [];
+    for (const [, e] of tracker.players) {
+      if (e.position && e.uuid) players.push({ name: e.name, uuid: e.uuid, position: e.position });
+    }
+    const { tracker: pt, events } = checkProximity(proxTracker, players, state.pos);
+    proxTracker = pt;
+    for (const ev of events) emitEvent(ev);
+  }
 });
 
 // ── Entity tracking ───────────────────────────────────────
 
 client.on('add_player', (pkt) => {
   if (pkt) tracker = handleAddPlayer(tracker, pkt);
+  if (pkt && pkt.username?.toLowerCase() !== USERNAME.toLowerCase()) {
+    const ev = processPlayerAppear(pkt);
+    if (ev) emitEvent(ev);
+  }
   log(`Player: ${pkt?.username || '?'} at ${JSON.stringify(pkt?.position)}`);
 });
 
@@ -147,14 +165,39 @@ client.on('add_item_entity', (pkt) => {
 
 client.on('move_entity', (pkt) => {
   if (pkt) tracker = handleMoveEntity(tracker, pkt);
+  if (pkt && state.pos) {
+    // Check if moved entity is a player — run proximity check
+    const loc = tracker._ridIndex.get(pkt.runtime_id);
+    if (loc && loc.map === 'players') {
+      const players = [];
+      for (const [, e] of tracker.players) {
+        if (e.position && e.uuid) players.push({ name: e.name, uuid: e.uuid, position: e.position });
+      }
+      const { tracker: pt, events } = checkProximity(proxTracker, players, state.pos);
+      proxTracker = pt;
+      for (const ev of events) emitEvent(ev);
+    }
+  }
 });
 
 client.on('remove_entity', (pkt) => {
-  if (pkt) tracker = handleRemoveEntity(tracker, pkt.runtime_id);
+  if (pkt) {
+    const ev = processPlayerDisappear(pkt.runtime_id, tracker);
+    if (ev) {
+      emitEvent(ev);
+      proxTracker = removeFromProximity(proxTracker, ev.uuid);
+    }
+    tracker = handleRemoveEntity(tracker, pkt.runtime_id);
+  }
 });
 
 client.on('player_list', (pkt) => {
   if (pkt) tracker = handlePlayerList(tracker, pkt);
+  if (pkt) {
+    const { roster: r, events } = processPlayerList(roster, pkt, USERNAME);
+    roster = r;
+    for (const ev of events) emitEvent(ev);
+  }
 });
 
 // ── Chunk tracking ────────────────────────────────────────
@@ -213,16 +256,18 @@ function requestSubChunks(cx, cz) {
   const botY = state.pos?.y ?? 64;
   const centerSub = Math.floor((botY + 64) / 16);
   const requests = [];
+  // Request sub-chunks around bot Y, allowing negative offsets for deep terrain.
+  // origin.y = -4 (world minimum sub-chunk), dy is offset from that.
   for (let r = -3; r <= 3; r++) {
     const dy = centerSub + r;
-    if (dy >= 0 && dy <= 23) requests.push({ x: 0, y: dy, z: 0 });
+    if (dy >= -4 && dy <= 19) requests.push({ x: 0, y: dy, z: 0 });
   }
   try {
     setupSubchunkSerializer();
-    client.queue('subchunk_request', {
+    client.write('subchunk_request', {
       dimension: 0,
-      requests,
-      origin: { x: cx, y: 0, z: cz },
+      requests: [{ x: 0, y: cx, z: cz }, ...requests],
+      origin: { x: cx, y: -4, z: cz },
     });
     log('Rq cx=' + cx + ' cz=' + cz + ' center=' + centerSub + ' count=' + requests.length);
   } catch(e) { log('Rq err: ' + e.message); }
@@ -553,6 +598,14 @@ function handle(cmd, outputFn = output) {
           },
           emotes: emoteCount(),
         });
+      }
+
+      case 'players': {
+        const list = [];
+        for (const [, p] of roster.players) {
+          list.push({ name: p.name, uuid: p.uuid, platform: p.platform, joinedAt: p.joinedAt });
+        }
+        return ok({ players: list, count: list.length });
       }
 
       default:

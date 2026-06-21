@@ -15,7 +15,7 @@ function makeChunk(cx, cz, blocks = {}) {
   const subChunks = new Map();
   for (const [key, val] of Object.entries(blocks)) {
     const [lx, ly, lz] = key.split(',').map(Number);
-    const cy = Math.floor((ly + 64) / 16);
+    const cy = Math.floor(ly / 16);
     if (!subChunks.has(cy)) subChunks.set(cy, new Uint32Array(4096));
     const idx = (lx << 8) | (lz << 4) | (ly & 0xf);
     subChunks.get(cy)[idx] = val.stateId ?? 0;
@@ -45,11 +45,11 @@ describe('perception', () => {
     it('reports loaded:true when all sub-chunks have data', () => {
       let cache = createChunkCache();
       // scan at y=64, radiusY=1 means y=63..65
-      // y=63 -> cy=Math.floor((63+64)/16)=7, y=64..65 -> cy=8
+      // y=63 -> cy=Math.floor(63/16)=3, y=64..65 -> cy=4
       // radiusX/Z=1 means x=4..6, z=4..6 — all within chunk 0,0
       const subChunks = new Map();
-      subChunks.set(7, 'air');
-      subChunks.set(8, 'air');
+      subChunks.set(3, 'air');
+      subChunks.set(4, 'air');
       const chunk = { x: 0, z: 0, subChunks };
       cache = setChunk(cache, 0, 0, chunk);
       const result = scan(cache, 5, 64, 5, 1, 1, 1);
