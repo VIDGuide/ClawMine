@@ -1,5 +1,9 @@
 # ClawCraft 🦀⛏️
 
+[![CI](https://github.com/VIDGuide/clawcraft/actions/workflows/ci.yml/badge.svg)](https://github.com/VIDGuide/clawcraft/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
+
 **An AI agent harness for Minecraft Bedrock.** Not a CLI tool. Not a UI. A JSON-in/JSON-out interface that lets an LLM perceive the world and act within it.
 
 Built on [`bedrock-protocol`](https://github.com/PrismarineJS/bedrock-protocol).
@@ -17,7 +21,7 @@ Existing Minecraft bots assume a human operator. ClawCraft assumes an **AI agent
 └──────┬────────────────────────────┬──────────────────────┘
        │ stdin (commands)            │ stdout (observations)
        │ — OR —                      │ — AND —
-       │ TCP :3001 (cmd.js)          │ events.jsonl (events.js)
+       │ TCP :4099 (cmd.js)          │ events.jsonl (events.js)
 ┌──────┴────────────────────────────┴──────────────────────┐
 │                    ClawCraft Harness                        │
 ├───────────────────────────┬───────────────────────────────┤
@@ -234,7 +238,7 @@ ClawCraft ships as an [OpenClaw](https://openclaw.dev) skill, letting any OpenCl
 ### How it works
 
 ```
-Agent → node scripts/cmd.js '{"action":"scan"}' → TCP :3001 → bot
+Agent → node scripts/cmd.js '{"action":"scan"}' → TCP :4099 → bot
 Agent → node scripts/events.js --since 1234567 → reads events.jsonl → game events
 ```
 
@@ -253,7 +257,7 @@ This creates a symlink at `~/.kiro/skills/clawcraft` pointing to the `skill/` di
 
 ```bash
 HOST=192.168.1.10 PORT=19132 USERNAME=ClawBot \
-  CLAWCRAFT_PORT=3001 CLAWCRAFT_EVENTS=/tmp/clawcraft-events.jsonl \
+  CLAWCRAFT_PORT=4099 CLAWCRAFT_EVENTS=/tmp/clawcraft-events.jsonl \
   npm start
 ```
 
@@ -277,7 +281,7 @@ node scripts/events.js --since 1750000000000
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLAWCRAFT_PORT` | `3001` | TCP port for the command server |
+| `CLAWCRAFT_PORT` | `4099` | TCP port for the command server |
 | `CLAWCRAFT_EVENTS` | `./events.jsonl` | Path to the JSONL event log |
 
 ## Block names & the palette
@@ -332,7 +336,7 @@ HOST=192.168.1.10 PORT=19132 USERNAME=ClawBot npm start
 | `SEND_CMD` | (empty) | Server command tool path (required for `tp`, `say`, `cmd`) |
 | `CHAT_WHITELIST` | (empty) | Comma-separated player names allowed to message the bot (empty = all) |
 | `CHAT_PREFIX` | (empty) | Required prefix for a message to count as directed at the bot |
-| `CLAWCRAFT_PORT` | `3001` | TCP port for the skill command server |
+| `CLAWCRAFT_PORT` | `4099` | TCP port for the skill command server |
 | `CLAWCRAFT_EVENTS` | `./events.jsonl` | Path to the JSONL event log |
 | `CLAWCRAFT_RESPAWN` | `false` | Auto-respawn on death |
 | `CLAWCRAFT_RECONNECT` | `false` | Auto-reconnect on disconnect (exponential backoff) |

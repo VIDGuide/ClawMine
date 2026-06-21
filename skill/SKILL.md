@@ -33,7 +33,7 @@ All interaction goes through two scripts:
 
 ## Configurations
 
-- CLAWCRAFT_PORT: `{{env.CLAWCRAFT_PORT}}` (Default: `3001`)
+- CLAWCRAFT_PORT: `{{env.CLAWCRAFT_PORT}}` (Default: `4099`)
 - CLAWCRAFT_EVENTS: `{{env.CLAWCRAFT_EVENTS}}` (Default: `./events.jsonl`)
 - SKILL_DIR: The directory containing this `SKILL.md` file. Resolve it from the path you loaded this file from (e.g. if you read `/home/user/skills/clawcraft/SKILL.md`, then `SKILL_DIR` is `/home/user/skills/clawcraft`).
 
@@ -43,7 +43,7 @@ All interaction goes through two scripts:
 
 | Variable | Default | Description |
 |---|---|---|
-| `CLAWCRAFT_PORT` | `3001` | TCP port the bot's command server listens on |
+| `CLAWCRAFT_PORT` | `4099` | TCP port the bot's command server listens on |
 | `CLAWCRAFT_EVENTS` | `./events.jsonl` | Path to the bot's JSONL event log |
 
 ### Bot Environment Variables (set when starting the bot)
@@ -70,7 +70,7 @@ All interaction goes through two scripts:
 
 ```bash
 HOST=192.168.1.10 PORT=19132 USERNAME=ClawBot \
-  CLAWCRAFT_PORT=3001 CLAWCRAFT_EVENTS=/tmp/clawcraft-events.jsonl \
+  CLAWCRAFT_PORT=4099 CLAWCRAFT_EVENTS=/tmp/clawcraft-events.jsonl \
   node src/bot.js &
 ```
 

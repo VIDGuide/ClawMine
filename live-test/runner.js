@@ -11,7 +11,7 @@
  *   npm run live-test -- --list           # list available suites
  *
  * Environment:
- *   CLAWCRAFT_PORT     TCP port (default: 3001)
+ *   CLAWCRAFT_PORT     TCP port (default: 4099)
  *   CLAWCRAFT_EVENTS   Event log file (default: ./events.jsonl)
  */
 import net from 'net';
@@ -33,7 +33,7 @@ function detectPort() {
     const match = content.match(/CLAWCRAFT_PORT=(\d+)/);
     if (match) return parseInt(match[1]);
   } catch {}
-  return 3001;
+  return 4099;
 }
 
 export const PORT = detectPort();

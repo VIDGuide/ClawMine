@@ -178,7 +178,7 @@ The skill uses two channels alongside the existing stdin/stdout interface:
 
 | Channel | Env Var | Default | Purpose |
 |---|---|---|---|
-| TCP command socket | `CLAWCRAFT_PORT` | `3001` | Agent sends commands, bot responds synchronously |
+| TCP command socket | `CLAWCRAFT_PORT` | `4099` | Agent sends commands, bot responds synchronously |
 | JSONL event log | `CLAWCRAFT_EVENTS` | `./events.jsonl` | Bot appends async events; agent polls via `scripts/events.js` |
 
 ### Keeping skill scripts in sync

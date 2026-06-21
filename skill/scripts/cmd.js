@@ -5,7 +5,7 @@
  *        node scripts/cmd.js '{"action":"scan","radius":4}'
  *
  * Environment:
- *   CLAWCRAFT_PORT    TCP port the bot is listening on (default: 3001)
+ *   CLAWCRAFT_PORT    TCP port the bot is listening on (default: 4099)
  *   CLAWCRAFT_TIMEOUT Response timeout in ms (default: 10000)
  *
  * Exit codes: 0 = success, 1 = error
@@ -13,7 +13,7 @@
  */
 import net from 'net';
 
-const PORT = parseInt(process.env.CLAWCRAFT_PORT || '3001');
+const PORT = parseInt(process.env.CLAWCRAFT_PORT || '4099');
 const TIMEOUT = parseInt(process.env.CLAWCRAFT_TIMEOUT || '10000');
 const raw = process.argv[2];
 

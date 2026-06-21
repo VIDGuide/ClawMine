@@ -101,7 +101,7 @@ echo '{"action":"walk","x":10,"y":64,"z":10}' | node src/bot.js 2>/dev/null
 Bot is ClawBot on Minecraft Bedrock server 192.168.1.10:19132 (survival, 1.26.31).
 Send JSON commands via: node scripts/cmd.js '{"action":"..."}' 
 Read events via: node scripts/events.js --last 20
-TCP port: 3001 (CLAWCRAFT_PORT env var)
+TCP port: 4099 (CLAWCRAFT_PORT env var)
 Event log: ./events.jsonl (CLAWCRAFT_EVENTS env var)
 All commands: pos, status, chat, say, whisper, emote, tp, move, setpos, face, nearby, block, blocks, chunks, scan, look, raycast, path, walk, cmd
 ```

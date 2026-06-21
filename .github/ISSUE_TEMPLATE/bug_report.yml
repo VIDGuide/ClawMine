@@ -1,0 +1,30 @@
+name: Bug Report
+description: Report a bug in ClawCraft
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the bug
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Node version
+      placeholder: "e.g. 20.11.0"
+  - type: input
+    attributes:
+      label: Server version
+      placeholder: "e.g. Bedrock 1.26.31"

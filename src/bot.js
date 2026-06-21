@@ -36,7 +36,7 @@ const PORT = parseInt(process.env.PORT || '19132');
 const USERNAME = process.env.BOT_USERNAME || process.env.USERNAME || 'ClawBot';
 const OFFLINE = process.env.OFFLINE !== 'false';
 const SEND_CMD = process.env.SEND_CMD || null;
-const CLAWCRAFT_PORT = parseInt(process.env.CLAWCRAFT_PORT || '3001');
+const CLAWCRAFT_PORT = parseInt(process.env.CLAWCRAFT_PORT || '4099');
 const CLAWCRAFT_EVENTS = process.env.CLAWCRAFT_EVENTS || './events.jsonl';
 const CLAWCRAFT_RECONNECT = process.env.CLAWCRAFT_RECONNECT === 'true';
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000];
