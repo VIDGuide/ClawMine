@@ -179,6 +179,8 @@ export function handle(cmd, ctx, outputFn) {
 
       case 'path': {
         if (!ctx.state.pos || cmd.x === undefined) return ok({ error: 'Need position and target' });
+        const pGround = getBlock(ctx.chunkCache, Math.floor(ctx.state.pos.x), Math.floor(ctx.state.pos.y) - 1, Math.floor(ctx.state.pos.z));
+        if (!pGround) return ok({ error: 'Chunks not loaded at current position — wait for chunks to arrive after teleport' });
         const result = findPath(ctx.chunkCache, ctx.state.pos.x, ctx.state.pos.y, ctx.state.pos.z, cmd.x, cmd.y ?? ctx.state.pos.y, cmd.z);
         if (!result) return ok({ error: 'No path found' });
         return ok({ path: result.path, length: result.path.length, distance: result.distance, euclidean: result.euclidean, cost: result.cost, start: ctx.state.pos, end: { x: cmd.x, y: cmd.y ?? ctx.state.pos.y, z: cmd.z } });
@@ -208,6 +210,8 @@ export function handle(cmd, ctx, outputFn) {
         if (Math.abs(ctx.state.pos.x - tx) < 1 && Math.abs(ctx.state.pos.y - ty) < 1 && Math.abs(ctx.state.pos.z - tz) < 1) {
           return ok({ walked: 0, pos: ctx.state.pos });
         }
+        const wGround = getBlock(ctx.chunkCache, Math.floor(ctx.state.pos.x), Math.floor(ctx.state.pos.y) - 1, Math.floor(ctx.state.pos.z));
+        if (!wGround) return ok({ error: 'Chunks not loaded at current position — wait for chunks to arrive after teleport' });
         const autoBuild = cmd.autoBuild !== false;
         const pathOpts = {
           allowPillar: autoBuild,
