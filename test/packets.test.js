@@ -112,7 +112,7 @@ describe('buildItemUseTransaction', () => {
     const pkt = buildItemUseTransaction('click_block', 'player_input', { x: 5, y: 60, z: 5 }, 1, 0, { network_id: 318 }, { x: 1, y: 64, z: 1 }, { x: 0.5, y: 0.5, z: 0.5 }, 123);
     const t = pkt.transaction;
     assert.equal(t.transaction_type, 'item_use');
-    assert.deepEqual(t.legacy, { type: 'none' });
+    assert.deepEqual(t.legacy, { legacy_request_id: 0 });
     assert.deepEqual(t.actions, []);
     assert.equal(t.transaction_data.action_type, 'click_block');
     assert.equal(t.transaction_data.trigger_type, 'player_input');
@@ -136,7 +136,7 @@ describe('buildItemUseOnEntityTransaction', () => {
     const pkt = buildItemUseOnEntityTransaction(99, 'attack', 0, { network_id: 307 }, { x: 1, y: 64, z: 1 }, { x: 2, y: 64, z: 2 });
     const t = pkt.transaction;
     assert.equal(t.transaction_type, 'item_use_on_entity');
-    assert.deepEqual(t.legacy, { type: 'none' });
+    assert.deepEqual(t.legacy, { legacy_request_id: 0 });
     assert.deepEqual(t.actions, []);
     assert.equal(t.transaction_data.entity_runtime_id, 99);
     assert.equal(t.transaction_data.action_type, 'attack');
@@ -155,7 +155,7 @@ describe('buildItemReleaseTransaction', () => {
     const pkt = buildItemReleaseTransaction('consume', 0, { network_id: 260 }, { x: 1, y: 65, z: 1 });
     const t = pkt.transaction;
     assert.equal(t.transaction_type, 'item_release');
-    assert.deepEqual(t.legacy, { type: 'none' });
+    assert.deepEqual(t.legacy, { legacy_request_id: 0 });
     assert.deepEqual(t.actions, []);
     assert.equal(t.transaction_data.action_type, 'consume');
     assert.equal(t.transaction_data.hotbar_slot, 0);

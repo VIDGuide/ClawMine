@@ -106,7 +106,7 @@ export function buildMobEquipment(runtimeId, item, slot, selectedSlot, windowId 
 export function buildInventoryTransaction(actions) {
   return {
     transaction: {
-      legacy: { type: 'none' },
+      legacy: { legacy_request_id: 0 },
       transaction_type: 'normal',
       actions: actions.map(a => ({
         source_type: 'container',
@@ -137,9 +137,18 @@ export function buildPlayerAction(runtimeId, action, position, resultPosition, f
  * Build an inventory_transaction for item_use (click_block, click_air, break_block).
  */
 export function buildItemUseTransaction(actionType, triggerType, blockPos, face, hotbarSlot, heldItem, playerPos, clickPos, blockRuntimeId) {
+  // block_runtime_id is a signed varint in the protocol. Our internal palette uses
+  // FNV-1a hashes which exceed the signed-32 range and corrupt the packet (byte
+  // misalignment → server "invalid string"). We don't have the server's true runtime
+  // id mapping, so send 0 for out-of-range values — the server resolves the block from
+  // block_position anyway.
+  let runtimeId = blockRuntimeId ?? 0;
+  if (!Number.isInteger(runtimeId) || runtimeId < -2147483648 || runtimeId > 2147483647) {
+    runtimeId = 0;
+  }
   return {
     transaction: {
-      legacy: { type: 'none' },
+      legacy: { legacy_request_id: 0 },
       transaction_type: 'item_use',
       actions: [],
       transaction_data: {
@@ -151,7 +160,7 @@ export function buildItemUseTransaction(actionType, triggerType, blockPos, face,
         held_item: heldItem || { network_id: 0 },
         player_pos: playerPos || { x: 0, y: 0, z: 0 },
         click_pos: clickPos || { x: 0, y: 0, z: 0 },
-        block_runtime_id: blockRuntimeId ?? 0,
+        block_runtime_id: runtimeId,
         client_prediction: 'success',
         client_cooldown_state: 'off',
       },
@@ -165,7 +174,7 @@ export function buildItemUseTransaction(actionType, triggerType, blockPos, face,
 export function buildItemUseOnEntityTransaction(entityRuntimeId, actionType, hotbarSlot, heldItem, playerPos, clickPos) {
   return {
     transaction: {
-      legacy: { type: 'none' },
+      legacy: { legacy_request_id: 0 },
       transaction_type: 'item_use_on_entity',
       actions: [],
       transaction_data: {
@@ -186,7 +195,7 @@ export function buildItemUseOnEntityTransaction(entityRuntimeId, actionType, hot
 export function buildItemReleaseTransaction(actionType, hotbarSlot, heldItem, headPos) {
   return {
     transaction: {
-      legacy: { type: 'none' },
+      legacy: { legacy_request_id: 0 },
       transaction_type: 'item_release',
       actions: [],
       transaction_data: {

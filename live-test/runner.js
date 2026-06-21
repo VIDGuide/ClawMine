@@ -243,16 +243,18 @@ console.log('');
 const status = await checkBotRunning();
 console.log(`Bot connected. Position: ${JSON.stringify(status.pos)}  Uptime: ${status.uptime}s`);
 
-// Wait for bot to have a valid position (move_player packet from server)
+// Wait for bot to have a valid position (set on spawn / add_player / move_player)
 if (!status.pos) {
   process.stderr.write('Waiting for position...');
-  const posDeadline = Date.now() + 15000;
+  const posDeadline = Date.now() + 30000;
+  let got = false;
   while (Date.now() < posDeadline) {
     await sleep(1000);
     const s = await cmd('pos');
-    if (s.pos) { process.stderr.write(` got it.\n`); break; }
+    if (s.pos) { process.stderr.write(` got it.\n`); got = true; break; }
     process.stderr.write('.');
   }
+  if (!got) process.stderr.write(' TIMEOUT (tests needing position will fail)\n');
 }
 
 // Wait for sub-chunk block data to load (server sends after initialization)

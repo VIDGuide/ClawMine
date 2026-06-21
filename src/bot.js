@@ -182,15 +182,15 @@ client.on('spawn', () => {
   log('Spawned');
 
   // Fallback: set initial position from start_game data if not yet known.
+  // Note: start_game player_position.y is unreliable on some 1.26.x servers
+  // (observed garbage values), so we only trust it when y is in world bounds.
+  // The respawn packet is the primary reliable source.
   if (!state.pos && client.startGameData?.player_position) {
     const p = client.startGameData.player_position;
-    log('DEBUG start_game player_position: ' + JSON.stringify(p));
     if (typeof p.y === 'number' && p.y > -64 && p.y < 320) {
       state = { ...state, pos: { x: p.x, y: p.y, z: p.z } };
       log('Initial position from start_game on spawn: ' + JSON.stringify(state.pos));
     }
-  } else if (!state.pos) {
-    log('DEBUG no start_game player_position; startGameData keys: ' + Object.keys(client.startGameData || {}).join(','));
   }
 
   if (!tickInterval) {
@@ -365,6 +365,12 @@ client.on('respawn', (pkt) => {
   const { vitals: v, event } = applyRespawn(vitals);
   vitals = v;
   if (event) emitEvent(event);
+  // respawn carries an authoritative position (vec3f) — use it to seed/refresh state.
+  // This is the most reliable position source on servers that don't send a self add_player.
+  if (pkt.position && typeof pkt.position.y === 'number' && pkt.position.y > -64 && pkt.position.y < 320) {
+    state = { ...state, pos: { x: pkt.position.x, y: pkt.position.y, z: pkt.position.z } };
+    if (pkt.runtime_entity_id && !state.runtimeId) state = { ...state, runtimeId: Number(pkt.runtime_entity_id) };
+  }
 });
 
 client.on('packet', (des) => {
