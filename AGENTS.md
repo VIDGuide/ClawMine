@@ -56,6 +56,7 @@ Everything below `bot.js` is pure logic that can be unit-tested without a server
 | `blocks.js` | Sub-chunk binary decoder (palette + word storage) | Yes |
 | `decoder.js` | `level_chunk` / `subchunk` packet → chunk objects | Yes |
 | `pathfinding.js` | A* over the block map (binary-heap queue) | Yes |
+| `navigation.js` | Block classification + cost-aware A* pathfinding (doors, ladders, hazards) | Yes |
 | `chat.js` | Incoming chat: whitelist, prefix, sanitize, structure | Yes |
 | `players.js` | Player roster (join/leave), appear/disappear, proximity zones | Yes |
 | `palette.js` | Runtime block ID → name (loads `data/block_palette.json`) | Yes |

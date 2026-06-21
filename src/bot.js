@@ -22,7 +22,7 @@ import { faceAngles, walkSteps } from './math.js';
 import { buildMovePlayer, buildPlayerAuthInput, buildChat } from './packets.js';
 import { createEntityTracker, handleAddPlayer, handleAddEntity, handleAddItemEntity, handleMoveEntity, handleRemoveEntity, handlePlayerList, nearbyEntities } from './entities.js';
 import { createChunkCache, setChunk, getBlock, getBlocks, chunkKey, chunkKeyFromPos, chunkStatus, getChunkAt, scan, direction, raycast } from './chunks.js';
-import { findPath } from './pathfinding.js';
+import { findPath, euclideanDistance } from './navigation.js';
 import { decodeSubChunkBuffer } from './blocks.js';
 import { decodeLevelChunk, applyBlockUpdates } from './decoder.js';
 import { createChatConfig, processIncoming } from './chat.js';
@@ -536,15 +536,38 @@ function handle(cmd, outputFn = output) {
 
       case 'path': {
         if (!state.pos || cmd.x === undefined) return ok({ error: 'Need position and target' });
-        const path = findPath(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
-        if (!path) return ok({ error: 'No path found' });
-        return ok({ path, length: path.length, start: state.pos, end: { x: cmd.x, y: cmd.y ?? state.pos.y, z: cmd.z } });
+        const result = findPath(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
+        if (!result) return ok({ error: 'No path found' });
+        return ok({ path: result.path, length: result.path.length, distance: result.distance, euclidean: result.euclidean, cost: result.cost, start: state.pos, end: { x: cmd.x, y: cmd.y ?? state.pos.y, z: cmd.z } });
+      }
+
+      case 'reachable': {
+        if (!state.pos || cmd.x === undefined) return ok({ error: 'Need position and target' });
+        const rResult = findPath(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z, { maxIterations: 3000 });
+        const euc = euclideanDistance(state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
+        if (!rResult) return ok({ reachable: false, distance: null, euclidean: euc, estimatedTime: null });
+        return ok({ reachable: true, distance: rResult.distance, euclidean: rResult.euclidean, estimatedTime: rResult.distance * 50 });
+      }
+
+      case 'distance': {
+        if (!state.pos || cmd.x === undefined) return ok({ error: 'Need position and target' });
+        const tx = cmd.x, ty = cmd.y ?? state.pos.y, tz = cmd.z;
+        const dist = euclideanDistance(state.pos.x, state.pos.y, state.pos.z, tx, ty, tz);
+        const dx = tx - state.pos.x, dy = ty - state.pos.y, dz = tz - state.pos.z;
+        const len = dist || 1;
+        return ok({ euclidean: dist, direction: { x: dx / len, y: dy / len, z: dz / len } });
       }
 
       case 'walk': {
         if (!state.pos || cmd.x === undefined) return ok({ error: 'Need target' });
-        const wPath = findPath(chunkCache, state.pos.x, state.pos.y, state.pos.z, cmd.x, cmd.y ?? state.pos.y, cmd.z);
-        if (!wPath) return ok({ error: 'No path found' });
+        const tx = cmd.x, ty = cmd.y ?? state.pos.y, tz = cmd.z;
+        // Walk-to-self shortcut
+        if (Math.abs(state.pos.x - tx) < 1 && Math.abs(state.pos.y - ty) < 1 && Math.abs(state.pos.z - tz) < 1) {
+          return ok({ walked: 0, pos: state.pos });
+        }
+        const wResult = findPath(chunkCache, state.pos.x, state.pos.y, state.pos.z, tx, ty, tz);
+        if (!wResult) return ok({ error: 'No path found' });
+        const wPath = wResult.path;
 
         // Build all steps from path waypoints
         const allSteps = [];

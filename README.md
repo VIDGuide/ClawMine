@@ -74,6 +74,8 @@ Send JSON commands via stdin, one per line. Responses come back on stdout.
 {"action":"raycast","x":50,"y":64,"z":50}
 {"action":"path","x":50,"y":64,"z":50}
 {"action":"walk","x":50,"y":64,"z":50}
+{"action":"reachable","x":50,"y":64,"z":50}
+{"action":"distance","x":50,"y":64,"z":50}
 {"action":"cmd","cmd":"time set day"}
 ```
 
@@ -99,6 +101,8 @@ Send JSON commands via stdin, one per line. Responses come back on stdout.
 | `raycast` | 3 | Line-of-sight check between two points |
 | `path` | 4 | Compute an A* path to a target (no movement) |
 | `walk` | 4 | Pathfind and walk to a target (paced, async) |
+| `reachable` | 4 | Check if a target is reachable (pathfind with limit, no movement) |
+| `distance` | 4 | Euclidean distance and direction vector to a target (no pathfinding) |
 | `cmd` | 0 | Pass an arbitrary command to the server (requires `SEND_CMD`) |
 
 ### Scan response: `loaded` field

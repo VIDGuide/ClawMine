@@ -152,6 +152,14 @@ node $SKILL_DIR/scripts/cmd.js '{"action":"path","x":50,"y":64,"z":50}'
 node $SKILL_DIR/scripts/cmd.js '{"action":"walk","x":50,"y":64,"z":50}'
 # Returns immediately: {"type":"response","walking":true,"steps":N,"path":[...]}
 # Walk_done event appears in event log when movement completes
+
+# Check if target is reachable (pathfind with iteration limit, no movement)
+node $SKILL_DIR/scripts/cmd.js '{"action":"reachable","x":50,"y":64,"z":50}'
+# Returns: {"type":"response","id":N,"reachable":true,"distance":N,"euclidean":N,"estimatedTime":N}
+
+# Get euclidean distance and direction vector to target (no pathfinding)
+node $SKILL_DIR/scripts/cmd.js '{"action":"distance","x":50,"y":64,"z":50}'
+# Returns: {"type":"response","id":N,"euclidean":N,"direction":{"x":N,"y":N,"z":N}}
 ```
 
 **Navigation parameters:**
@@ -164,6 +172,8 @@ node $SKILL_DIR/scripts/cmd.js '{"action":"walk","x":50,"y":64,"z":50}'
 | `face` | `x`,`y`,`z` | number | Yes | Point to look at |
 | `path` | `x`,`y`,`z` | number | Yes | Target coordinates |
 | `walk` | `x`,`y`,`z` | number | Yes | Target coordinates |
+| `reachable` | `x`,`y`,`z` | number | Yes | Target coordinates |
+| `distance` | `x`,`y`,`z` | number | Yes | Target coordinates |
 
 ### Perception Commands
 
