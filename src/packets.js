@@ -36,7 +36,10 @@ export function buildMovePlayer(state, x, y, z, pitch, yaw, mode = 'normal') {
  */
 export function buildPlayerAuthInput(state, x, y, z, yawVal, pitchVal, inputMode = 'mouse', opts = {}) {
   const sprinting = opts.sprinting === true;
-  return {
+  // Server-authoritative block breaking: actions are carried in the auth-input stream.
+  // opts.blockActions = [{ action: 'start_break'|'crack_break'|'predict_break'|..., position: {x,y,z}, face }]
+  const blockActions = Array.isArray(opts.blockActions) ? opts.blockActions : null;
+  const pkt = {
     pitch: pitchVal ?? state.pitch ?? 0,
     yaw: yawVal ?? state.yaw ?? 0,
     position: { x, y, z },
@@ -53,7 +56,7 @@ export function buildPlayerAuthInput(state, x, y, z, yawVal, pitchVal, inputMode
       persist_sneak: false, start_sprinting: sprinting, stop_sprinting: false,
       start_sneaking: false, stop_sneaking: false, start_swimming: false,
       stop_swimming: false, start_jumping: false, start_gliding: false,
-      stop_gliding: false, item_interact: false, block_action: false,
+      stop_gliding: false, item_interact: false, block_action: !!blockActions,
       item_stack_request: false, handled_teleport: false, emoting: false,
       missed_swing: false, start_crawling: false, stop_crawling: false,
       start_flying: false, stop_flying: false, received_server_data: false,
@@ -70,12 +73,20 @@ export function buildPlayerAuthInput(state, x, y, z, yawVal, pitchVal, inputMode
     play_mode: 'normal',
     interaction_model: 'touch',
     interact_rotation: { x: 0, z: 0 },
-    tick: 0n,
+    tick: opts.tick ?? 0n,
     delta: { x: 0, y: 0, z: 0 },
     analogue_move_vector: { x: 0, z: 0 },
     camera_orientation: { x: 0, y: 0, z: 0 },
     raw_move_vector: { x: 0, z: 0 },
   };
+  if (blockActions) {
+    pkt.block_action = blockActions.map(a => ({
+      action: a.action,
+      position: { x: Math.floor(a.position.x), y: Math.floor(a.position.y), z: Math.floor(a.position.z) },
+      face: a.face ?? 0,
+    }));
+  }
+  return pkt;
 }
 
 /**

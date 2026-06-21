@@ -18,6 +18,7 @@ import fs from 'fs';
 import { execFileSync } from 'child_process';
 
 import { createState, applyMovePlayer } from './state.js';
+import { buildPlayerAuthInput } from './packets.js';
 import { createEntityTracker, handleAddPlayer, handleAddEntity, handleAddItemEntity, handleMoveEntity, handleRemoveEntity, handlePlayerList } from './entities.js';
 import { createChunkCache, setChunk, chunkKeyFromPos, evictChunks } from './chunks.js';
 import { decodeSubChunkBuffer } from './blocks.js';
@@ -73,6 +74,11 @@ let _lastAlerts = new Map();
 let _lastDeathPos = null;
 let _lastDeathInventory = null;
 let tickInterval;
+let _authInterval;            // 20Hz player_auth_input heartbeat (server-authoritative play)
+let _authTick = 0n;           // monotonic client simulation tick
+let _serverTickBase = 0n;     // server current_tick captured at start_game
+let _serverTickBaseAt = 0;    // Date.now() when _serverTickBase was captured
+let _pendingBlockAction = null; // {action, position, face} injected into the next auth tick
 let _ignoreMoveUntil = 0;
 const _startedAt = Date.now();
 let _initialized = false;
@@ -198,6 +204,24 @@ client.on('spawn', () => {
       client.queue('tick_sync', { request_time: BigInt(Date.now()), response_time: 0n });
     }, 2000);
   }
+
+  // Start the continuous player_auth_input heartbeat (~20Hz). Server-authoritative
+  // play (movement + block breaking) requires a steady input stream whose tick is
+  // synchronised with the server. We extrapolate the server tick as
+  // base + floor(elapsed_ms / 50) so it tracks the server's 20Hz simulation.
+  if (!_authInterval) {
+    _authInterval = setInterval(() => {
+      if (!state.pos) return;
+      const tick = _serverTickBase + BigInt(Math.floor((Date.now() - _serverTickBaseAt) / 50));
+      _authTick = tick;
+      const ba = _pendingBlockAction;
+      _pendingBlockAction = null;
+      client.queue('player_auth_input', buildPlayerAuthInput(
+        state, state.pos.x, state.pos.y, state.pos.z, state.yaw, state.pitch, 'mouse',
+        { tick, blockActions: ba ? [ba] : undefined },
+      ));
+    }, 50);
+  }
 });
 
 // ── Item palette (network_id → name) ─────────────────────
@@ -210,6 +234,16 @@ client.on('start_game', (pkt) => {
   // Extract runtime entity ID from start_game
   if (pkt?.runtime_entity_id) {
     state = { ...state, runtimeId: Number(pkt.runtime_entity_id) };
+  }
+  // Seed the auth-input tick from the server's current_tick so our input stream
+  // aligns with the server's simulation (within rewind_history_size tolerance).
+  // We store the base + capture time and extrapolate at 20Hz in the heartbeat,
+  // because the server advances its tick continuously and does not reply to tick_sync.
+  if (pkt?.current_tick !== undefined && pkt.current_tick !== null) {
+    try {
+      _serverTickBase = BigInt(pkt.current_tick);
+      _serverTickBaseAt = Date.now();
+    } catch { _serverTickBase = 0n; _serverTickBaseAt = Date.now(); }
   }
 });
 
@@ -227,6 +261,18 @@ function processInventoryChanges(changes) {
   events = correlatePickup(events, _recentItemRemovals, state.pos);
   for (const ev of events) emitEvent(ev);
 }
+
+client.on('tick_sync', (pkt) => {
+  // The server echoes its current simulation tick in response_time. Keep our
+  // auth-input tick aligned so server-authoritative actions (block breaking) are
+  // accepted within the server's rewind window.
+  if (pkt && pkt.response_time !== undefined && pkt.response_time !== null) {
+    try {
+      const serverTick = BigInt(pkt.response_time);
+      if (serverTick > 0n) _authTick = serverTick;
+    } catch {}
+  }
+});
 
 client.on('inventory_content', (pkt) => {
   if (!pkt || !itemPalette) return;
@@ -753,6 +799,11 @@ function handle(cmd, outputFn = output) {
         for (let dz = -scope; dz <= scope; dz++) {
           try { requestSubChunks(cx + dx, cz + dz); } catch (e) { log('requestSubChunksNear err: ' + e.message); }
         }
+    },
+    // Inject a block action into the next player_auth_input heartbeat tick
+    // (server-authoritative block breaking).
+    queueBlockAction: (action, position, face) => {
+      _pendingBlockAction = { action, position: { x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) }, face: face ?? 0 };
     },
   };
   handleCommand(cmd, ctx, outputFn);

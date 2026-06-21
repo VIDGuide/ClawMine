@@ -37,23 +37,6 @@ const SOFT_BLOCKS = new Set([
 ]);
 
 await test('mine end-to-end: find block, walk, break, emit mine_done', async () => {
-  // KNOWN ISSUE: the break_block inventory_transaction is rejected by the live
-  // 1.26.30 server ("malformed: invalid string", readNoHeader failed packetId 30),
-  // which terminates the connection.
-  //
-  // Fixed so far (real bugs found while investigating):
-  //   1. legacy field was {type:'none'} → must be {legacy_request_id:0}
-  //   2. block_runtime_id was the FNV palette hash (overflows signed varint) → clamped to 0
-  //
-  // Remaining: with a real held tool the server still rejects the packet, even though
-  // it serializes + round-trips cleanly against bedrock-protocol's own 1.26.30
-  // protocol.json. This points to a mismatch between the bundled protocol definition
-  // and the actual server build's inventory_transaction layout. Needs a packet capture
-  // from a vanilla client against this server to resolve. Disabled to keep the suite
-  // green and avoid terminating the connection mid-run.
-  console.log('    (skipping: break_block rejected by 1.26.30 server — see comment)');
-  return;
-  // eslint-disable-next-line no-unreachable
   const scanResp = await cmd('scan', { radius: 6, radiusY: 3 });
   assertNoError(scanResp, 'scan for breakable');
   if (!scanResp.loaded) {
@@ -147,6 +130,24 @@ await test('mine end-to-end: find block, walk, break, emit mine_done', async () 
   } catch {
     // Some blocks don't drop items (grass, snow_layer) — not a failure
     console.log('    (no item_added event — block may not drop anything)');
+  }
+
+  // 6. Verify server-side outcome.
+  // NOTE: With server_authoritative_block_breaking=true, the server only destroys
+  // the block if our player_auth_input tick stream is tightly synchronised with the
+  // server simulation tick. We send a continuous 20Hz heartbeat seeded from
+  // start_game.current_tick, but precise per-tick sync (tracking the server tick from
+  // inbound packets) is not yet implemented, so the block may still be present.
+  // The achievable guarantee today: the break sequence is accepted WITHOUT a protocol
+  // violation / disconnect (the legacy inventory_transaction caused a terminating kick).
+  await sleep(1000);
+  const stillConnected = await cmd('status');
+  assert(stillConnected.connected === true, 'bot should remain connected through a break (no protocol violation)');
+  const afterBlock = await cmd('block', { x: bx, y: by, z: bz });
+  if (afterBlock.block && afterBlock.block.name === target.name) {
+    console.log(`    (block still present — server-authoritative tick sync needed for actual destruction)`);
+  } else {
+    console.log(`    (confirmed: ${target.name} removed, now ${afterBlock.block?.name || 'air'})`);
   }
 });
 

@@ -433,23 +433,26 @@ export function handle(cmd, ctx, outputFn) {
 
         const mPos = { x: cmd.x, y: cmd.y, z: cmd.z };
         const mFace = 1;
-        ctx.client.queue('player_action', buildPlayerAction(ctx.state.runtimeId, 'start_break', mPos, mPos, mFace));
+        // Server-authoritative block breaking: actions ride the continuous 20Hz
+        // player_auth_input heartbeat (managed in bot.js). We inject start_break now,
+        // continue_break each tick while breaking, then predict_break when done.
+        ctx.queueBlockAction('start_break', mPos, mFace);
 
         const mineId = id;
         const breakMs = breakTicks * 50;
+        const startedAt = Date.now();
         const crackTimer = setInterval(() => {
-          ctx.client.queue('player_action', buildPlayerAction(ctx.state.runtimeId, 'crack_break', mPos, mPos, mFace));
-        }, 200);
+          if (Date.now() - startedAt >= breakMs) {
+            clearInterval(crackTimer);
+            ctx.queueBlockAction('predict_break', mPos, mFace);
+            ctx.setActiveMine(null);
+            ctx.emitEvent({ type: 'mine_done', id: mineId, block: blockName, pos: mPos, ticks: breakTicks });
+          } else {
+            ctx.queueBlockAction('continue_break', mPos, mFace);
+          }
+        }, 50);
 
-        const mineTimer = setTimeout(() => {
-          clearInterval(crackTimer);
-          ctx.client.queue('player_action', buildPlayerAction(ctx.state.runtimeId, 'stop_break', mPos, mPos, mFace));
-          ctx.client.queue('inventory_transaction', buildItemUseTransaction('break_block', 'player_input', mPos, mFace, ctx.inventory.heldSlot, ctx.itemToRaw(getHeldItem(ctx.inventory)), ctx.state.pos, { x: 0.5, y: 0.5, z: 0.5 }, mBlock.stateId || 0));
-          ctx.setActiveMine(null);
-          ctx.emitEvent({ type: 'mine_done', id: mineId, block: blockName, pos: mPos, ticks: breakTicks });
-        }, breakMs);
-
-        ctx.setActiveMine({ timer: mineTimer, crackTimer, id: mineId, pos: mPos, block: blockName });
+        ctx.setActiveMine({ timer: null, crackTimer, id: mineId, pos: mPos, block: blockName });
         return ok({ mining: true, block: blockName, breakTime: breakTicks, tool: mTool?.name || null });
       }
 
@@ -458,7 +461,7 @@ export function handle(cmd, ctx, outputFn) {
         if (!am) return ok({ error: 'Not mining' });
         clearTimeout(am.timer);
         clearInterval(am.crackTimer);
-        ctx.client.queue('player_action', buildPlayerAction(ctx.state.runtimeId, 'abort_break', am.pos, am.pos, 0));
+        ctx.queueBlockAction('abort_break', am.pos, 0);
         ctx.setActiveMine(null);
         return ok({ aborted: true });
       }
