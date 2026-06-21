@@ -38,7 +38,8 @@ const OFFLINE = process.env.OFFLINE !== 'false';
 const SEND_CMD = process.env.SEND_CMD || null;
 const CLAWMINE_PORT = parseInt(process.env.CLAWMINE_PORT || '3001');
 const CLAWMINE_EVENTS = process.env.CLAWMINE_EVENTS || './events.jsonl';
-const CLAWMINE_RESPAWN = process.env.CLAWMINE_RESPAWN === 'true';
+const CLAWMINE_RECONNECT = process.env.CLAWMINE_RECONNECT === 'true';
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 16000, 30000];
 const DANGER_CONFIG = {
   mobDistance: parseFloat(process.env.CLAWMINE_DANGER_MOB_DIST || '8'),
   lowHealth: parseFloat(process.env.CLAWMINE_DANGER_HEALTH || '6'),
@@ -73,16 +74,24 @@ let _ignoreMoveUntil = 0;
 const _startedAt = Date.now();
 let _initialized = false;
 const _pendingSubchunkRequests = [];
+let _reconnectAttempt = 0;
+let _reconnecting = false;
 
 // ── Client ─────────────────────────────────────────────────
 
-const client = bedrock.createClient({
-  host: HOST, port: PORT, username: USERNAME,
-  offline: OFFLINE, timeout: 30000,
-});
+let client;
+
+function connect() {
+  _initialized = false;
+  _pendingSubchunkRequests.length = 0;
+  client = bedrock.createClient({
+    host: HOST, port: PORT, username: USERNAME,
+    offline: OFFLINE, timeout: 30000,
+  });
 
 client.on('join', () => {
-  emitEvent({ type: 'ready' });
+  _reconnectAttempt = 0; // reset backoff on successful connection
+  emitEvent({ type: _reconnectAttempt > 0 ? 'reconnected' : 'ready' });
   log('Joined');
 
   // Break the chicken-and-egg deadlock: server won't respond to subchunk
@@ -290,10 +299,17 @@ client.on('packet', (des) => {
     log('VIOLATION: ' + JSON.stringify(des?.data?.params));
   }
 });
-client.on('error', (err) => log('Error:', err.message));
+client.on('error', (err) => {
+  log('Error:', err.message);
+  emitEvent({ type: 'disconnected', reason: err.message });
+  if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+  if (CLAWMINE_RECONNECT) scheduleReconnect();
+});
 client.on('end', (reason) => {
   log('End:', reason);
-  if (tickInterval) clearInterval(tickInterval);
+  emitEvent({ type: 'disconnected', reason: reason || 'end' });
+  if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+  if (CLAWMINE_RECONNECT) scheduleReconnect();
 });
 
 // ── Position tracking ─────────────────────────────────────
@@ -560,6 +576,8 @@ client.on('emote', (pkt) => {
   });
 });
 
+} // end connect()
+
 // ── JSON command interface ────────────────────────────────
 
 function output(data) {
@@ -653,6 +671,34 @@ function handle(cmd, outputFn = output) {
   inventory = ctx.inventory;
 }
 
+function scheduleReconnect() {
+  if (_reconnecting) return;
+  _reconnecting = true;
+  const delay = RECONNECT_DELAYS[Math.min(_reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+  _reconnectAttempt++;
+  emitEvent({ type: 'reconnecting', attempt: _reconnectAttempt, delay });
+  log(`Reconnecting in ${delay}ms (attempt ${_reconnectAttempt})`);
+  setTimeout(() => {
+    _reconnecting = false;
+    // Reset all session state
+    state = createState();
+    tracker = createEntityTracker();
+    chunkCache = createChunkCache();
+    roster = createPlayerRoster();
+    proxTracker = createProximityTracker();
+    itemPalette = null;
+    inventory = createInventory();
+    vitals = createVitals();
+    _vitalsBuffer = createBuffer();
+    _lastAlerts = new Map();
+    // Abort any active operations
+    if (_activeMine) { clearTimeout(_activeMine.timer); clearInterval(_activeMine.crackTimer); _activeMine = null; }
+    if (_activeEat) { clearTimeout(_activeEat.timer); _activeEat = null; }
+    if (_activeWalk) { clearInterval(_activeWalk.timer); _activeWalk = null; }
+    connect();
+  }, delay);
+}
+
 // ── Stdin reader ──────────────────────────────────────────
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
@@ -700,14 +746,18 @@ tcpServer.listen(CLAWMINE_PORT, '127.0.0.1', () => {
 
 emitEvent({ type: 'startup', version: '0.4.0' });
 
+// Initial connection
+connect();
+
 // ── Graceful shutdown ─────────────────────────────────────
 
 function shutdown() {
   log('Shutting down...');
+  _reconnecting = true; // prevent reconnect on graceful shutdown
   if (tickInterval) clearInterval(tickInterval);
   rl.close();
   tcpServer.close();
-  try { client.close(); } catch {}
+  try { if (client) client.close(); } catch {}
   emitEvent({ type: 'shutdown' });
   eventStream.end(() => process.exit(0));
 }
