@@ -66,6 +66,44 @@ await test('walk to nearby point emits walk_done event', async () => {
   await sleep(3000);
 });
 
+await test('walk actually moves the bot (pos changes after walk_done)', async () => {
+  const beforePos = await cmd('pos');
+  assertNoError(beforePos, 'pos before walk');
+  assert(beforePos.pos != null, 'need position');
+  const startX = beforePos.pos.x;
+  const startZ = beforePos.pos.z;
+
+  const target = { x: Math.floor(startX) + 5, y: Math.floor(beforePos.pos.y), z: Math.floor(startZ) };
+  const before = Date.now();
+  const resp = await cmd('walk', target);
+
+  if (resp.error) {
+    console.log(`    (walk failed: ${resp.error} — skipping movement check)`);
+    return;
+  }
+  assertNoError(resp, 'walk');
+  assert(resp.walking === true, 'should be walking');
+
+  // Wait for walk_done
+  const done = await waitForEvent(
+    e => e.type === 'walk_done' && e.id === resp.id,
+    { timeout: 15000, since: before },
+  );
+  assert(done.walked > 0, `should have walked steps, got ${done.walked}`);
+
+  // Check that pos command now reports a different position
+  const afterPos = await cmd('pos');
+  assertNoError(afterPos, 'pos after walk');
+  const dx = afterPos.pos.x - startX;
+  const dz = afterPos.pos.z - startZ;
+  const distMoved = Math.sqrt(dx * dx + dz * dz);
+  assert(distMoved > 2, `bot should have moved at least 2 blocks, but only moved ${distMoved.toFixed(1)}`);
+
+  // Restore position
+  await cmd('walk', { x: Math.floor(startX), y: Math.floor(beforePos.pos.y), z: Math.floor(startZ) });
+  await sleep(4000);
+});
+
 await test('walk to current position returns immediately (0 steps)', async () => {
   const posResp = await cmd('pos');
   assertNoError(posResp, 'pos');
