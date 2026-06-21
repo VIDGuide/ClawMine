@@ -21,7 +21,8 @@ import { buildMovePlayer, buildPlayerAuthInput, buildChat } from './packets.js';
 import { createEntityTracker, handleAddPlayer, handleAddEntity, handleAddItemEntity, handleMoveEntity, handleRemoveEntity, handlePlayerList, nearbyEntities } from './entities.js';
 import { createChunkCache, setChunk, getBlock, getBlocks, chunkKey, chunkKeyFromPos, chunkStatus, getChunkAt, scan, direction, raycast } from './chunks.js';
 import { findPath } from './pathfinding.js';
-import { decodeLevelChunk, decodeSubChunk, applyBlockUpdates } from './decoder.js';
+import { decodeSubChunkBuffer } from './blocks.js';
+import { decodeLevelChunk, applyBlockUpdates } from './decoder.js';
 import { createChatConfig, processIncoming } from './chat.js';
 
 const HOST = process.env.HOST || '192.168.1.10';
@@ -136,7 +137,35 @@ client.on('level_chunk', (pkt) => {
     });
 });
 
+let _subchunkSerializerPatched = false;
 
+function setupSubchunkSerializer() {
+  if (_subchunkSerializerPatched || !client.serializer) return;
+  _subchunkSerializerPatched = true;
+  
+  const wCtx = client.serializer.proto.writeCtx;
+  const sCtx = client.serializer.proto.sizeOfCtx;
+  
+  // Correct format (from protocol experimentation): dimension → offsets → position
+  wCtx.packet_subchunk_request = function(value, buffer, offset) {
+    offset = wCtx.zigzag32(value.dimension, buffer, offset);
+    offset = wCtx.varint(value.requests.length, buffer, offset);
+    for (let i = 0; i < value.requests.length; i++) {
+      offset = wCtx.i8(value.requests[i].x, buffer, offset);
+      offset = wCtx.i8(value.requests[i].y, buffer, offset);
+      offset = wCtx.i8(value.requests[i].z, buffer, offset);
+    }
+    offset = wCtx.li32(value.origin.x, buffer, offset);
+    offset = wCtx.li32(value.origin.y, buffer, offset);
+    offset = wCtx.li32(value.origin.z, buffer, offset);
+    return offset;
+  };
+  sCtx.packet_subchunk_request = function(value) {
+    return sCtx.zigzag32(value.dimension) + 
+           sCtx.varint(value.requests.length) + 
+           value.requests.length * 3 + 12;
+  };
+}
 
 function requestSubChunks(cx, cz) {
   const botY = state.pos?.y ?? 64;
@@ -144,13 +173,14 @@ function requestSubChunks(cx, cz) {
   const requests = [];
   for (let r = -3; r <= 3; r++) {
     const dy = centerSub + r;
-    if (dy >= 0 && dy <= 23) requests.push({ dx: 0, dy, dz: 0 });
+    if (dy >= 0 && dy <= 23) requests.push({ x: 0, y: dy, z: 0 });
   }
   try {
+    setupSubchunkSerializer();
     client.write('subchunk_request', {
       dimension: 0,
-      origin: { x: cx, y: 0, z: cz },
       requests,
+      origin: { x: cx, y: 0, z: cz },
     });
     log('Rq cx=' + cx + ' cz=' + cz + ' center=' + centerSub + ' count=' + requests.length);
   } catch(e) { log('Rq err: ' + e.message); }
@@ -170,18 +200,22 @@ client.on('subchunk', (pkt) => {
     }
     const cx = pkt.origin.x + entry.dx;
     const cz = pkt.origin.z + entry.dz;
+    const cy = pkt.origin.y + entry.dy;
     const key = chunkKeyFromPos(cx, cz);
-    const chunk = chunkCache.chunks.get(key);
-    if (!chunk) {
-      log(`Sub-chunk for unloaded chunk (${cx}, ${cz}), skipping`);
-      continue;
+    // Decode synchronously and update the latest chunk to avoid
+    // race conditions (all 7 entries target the same chunk)
+    try {
+      const { blocks } = decodeSubChunkBuffer(Buffer.from(entry.payload));
+      const latest = chunkCache.chunks.get(key);
+      if (latest) {
+        const subChunks = new Map(latest.subChunks);
+        subChunks.set(cy, blocks);
+        chunkCache = setChunk(chunkCache, cx, cz, { ...latest, subChunks });
+        log(`Sub-chunk at (${cx}, ${entry.dy}, ${cz}) — cy=${cy}`);
+      }
+    } catch (e) {
+      log(`Sub-chunk decode failed: ${e.message}`);
     }
-    decodeSubChunk(chunk, pkt.origin.y + entry.dy, Buffer.from(entry.payload))
-      .then((updated) => {
-        chunkCache = setChunk(chunkCache, cx, cz, updated);
-        log(`Sub-chunk at (${cx}, ${entry.dy}, ${cz})`);
-      })
-      .catch((err) => log(`Sub-chunk decode failed: ${err.message}`));
   }
 });
 
@@ -232,7 +266,6 @@ function handle(cmd) {
       case 'chat':
         client.queue('text', buildChat(cmd.message));
         return ok({ sent: true });
-
 
       case 'say':
         if (!SEND_CMD) return ok({ error: 'No SEND_CMD configured' });
