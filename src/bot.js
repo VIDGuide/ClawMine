@@ -651,11 +651,45 @@ function handle(cmd, outputFn = output) {
     emitEvent,
     itemToRaw,
     getActiveMine: () => _activeMine,
-    setActiveMine: (v) => { _activeMine = v; },
+    setActiveMine: (v) => {
+      if (_activeMine?._watchdog) clearTimeout(_activeMine._watchdog);
+      if (v) {
+        v._watchdog = setTimeout(() => {
+          if (!_activeMine || _activeMine.id !== v.id) return;
+          clearTimeout(_activeMine.timer);
+          clearInterval(_activeMine.crackTimer);
+          _activeMine = null;
+          emitEvent({ type: 'command_timeout', command: 'mine', id: v.id });
+        }, 30000);
+      }
+      _activeMine = v;
+    },
     getActiveEat: () => _activeEat,
-    setActiveEat: (v) => { _activeEat = v; },
+    setActiveEat: (v) => {
+      if (_activeEat?._watchdog) clearTimeout(_activeEat._watchdog);
+      if (v) {
+        v._watchdog = setTimeout(() => {
+          if (!_activeEat || _activeEat.id !== v.id) return;
+          clearTimeout(_activeEat.timer);
+          _activeEat = null;
+          emitEvent({ type: 'command_timeout', command: 'eat', id: v.id });
+        }, 10000);
+      }
+      _activeEat = v;
+    },
     getActiveWalk: () => _activeWalk,
-    setActiveWalk: (v) => { _activeWalk = v; },
+    setActiveWalk: (v) => {
+      if (_activeWalk?._watchdog) clearTimeout(_activeWalk._watchdog);
+      if (v) {
+        v._watchdog = setTimeout(() => {
+          if (!_activeWalk || _activeWalk.id !== v.id) return;
+          clearInterval(_activeWalk.timer);
+          _activeWalk = null;
+          emitEvent({ type: 'command_timeout', command: 'walk', id: v.id });
+        }, 60000);
+      }
+      _activeWalk = v;
+    },
     setIgnoreMoveUntil: (t) => { _ignoreMoveUntil = t; },
     getLastDeath: () => _lastDeathPos ? { pos: _lastDeathPos, items: _lastDeathInventory } : null,
     requestSubChunksNear: (x, z) => {
