@@ -5,6 +5,17 @@
  */
 import { test, cmd, sleep, assert, assertNoError } from '../runner.js';
 
+// Wait for sub-chunk data at current position (may follow teleport suite which moves the bot)
+{
+  let ready = false;
+  for (let i = 0; i < 15; i++) {
+    const s = await cmd('scan', { radius: 2, radiusY: 2 });
+    if (s.loaded) { ready = true; break; }
+    await sleep(1000);
+  }
+  if (!ready) process.stderr.write('    (vision: sub-chunk data not ready after 15s)\n');
+}
+
 await test('chunks are loaded around current position', async () => {
   // Allow time for chunks to arrive (especially after teleport in prior suite)
   let loaded = 0, total = 0;

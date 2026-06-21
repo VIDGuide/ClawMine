@@ -44,7 +44,7 @@ await test('place end-to-end: place dirt, verify, mine back', async () => {
 
   // Check bot has dirt in inventory
   const inv = await cmd('inventory', { view: 'summary' });
-  const hasDirt = inv.summary && inv.summary.some(s => s && (s.name || '').includes('dirt'));
+  const hasDirt = inv.summary && inv.summary.items && inv.summary.items.some(s => s && (s.name || '').includes('dirt'));
   if (!hasDirt) {
     skip('place end-to-end', 'no dirt in inventory');
     return;

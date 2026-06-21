@@ -5,24 +5,18 @@
  */
 import { test, skip, cmd, sleep, assert, assertNoError } from '../runner.js';
 
-// Check if SEND_CMD is available
-const statusResp = await cmd('status');
-const hasSendCmd = !((await cmd('tp', { x: 0, y: 64, z: 0 })).error?.includes('No SEND_CMD'));
-// If tp worked or errored for a different reason, SEND_CMD is configured
-// We'll check by attempting and see if we get SEND_CMD error
-
-// Actually check properly: tp with obviously wrong coords — if SEND_CMD missing, error is predictable
-const testTp = await cmd('tp', { x: 999999, y: 64, z: 999999 });
-const sendCmdAvailable = !testTp.error?.includes('No SEND_CMD');
+// Check if SEND_CMD is available by attempting a tp to the bot's CURRENT position
+// (a no-op move that won't relocate the bot or request out-of-range sub-chunks)
+const startResp = await cmd('pos');
+const start = startResp.pos ?? { x: 0, y: 64, z: 0 };
+const probe = await cmd('tp', { x: Math.round(start.x), y: Math.round(start.y), z: Math.round(start.z) });
+const sendCmdAvailable = !probe.error?.includes('No SEND_CMD');
 
 if (!sendCmdAvailable) {
   skip('tp sends bot to coordinates', 'SEND_CMD not configured');
   skip('position syncs to tp target', 'SEND_CMD not configured');
   skip('chunks load at new position after tp', 'SEND_CMD not configured');
 } else {
-  // Get starting position before any tp
-  const startResp = await cmd('pos');
-  const start = startResp.pos ?? { x: 0, y: 64, z: 0 };
   const safeReturn = { x: Math.round(start.x), y: Math.round(start.y), z: Math.round(start.z) };
 
   await test('tp sends bot to coordinates', async () => {

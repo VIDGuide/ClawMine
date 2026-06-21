@@ -83,6 +83,60 @@ let _reconnecting = false;
 
 let client;
 
+// ── Sub-chunk request (module scope so handle()/ctx can call it) ──
+let _subchunkSerializerPatched = false;
+
+function setupSubchunkSerializer() {
+  if (_subchunkSerializerPatched || !client.serializer) return;
+  _subchunkSerializerPatched = true;
+
+  const wCtx = client.serializer.proto.writeCtx;
+  const sCtx = client.serializer.proto.sizeOfCtx;
+
+  // Correct order per gophertunnel: dimension(varint32) → offsets(varuint32 + i8×3[]) → position(3×li32)
+  wCtx.packet_subchunk_request = function(value, buffer, offset) {
+    offset = wCtx.zigzag32(value.dimension, buffer, offset);
+    offset = wCtx.varint(value.requests.length, buffer, offset);
+    for (let i = 0; i < value.requests.length; i++) {
+      offset = wCtx.i8(value.requests[i].x, buffer, offset);
+      offset = wCtx.i8(value.requests[i].y, buffer, offset);
+      offset = wCtx.i8(value.requests[i].z, buffer, offset);
+    }
+    offset = wCtx.li32(value.origin.x, buffer, offset);
+    offset = wCtx.li32(value.origin.y, buffer, offset);
+    offset = wCtx.li32(value.origin.z, buffer, offset);
+    return offset;
+  };
+  sCtx.packet_subchunk_request = function(value) {
+    return sCtx.zigzag32(value.dimension) +
+           sCtx.varint(value.requests.length) + value.requests.length * 3 +
+           12;
+  };
+}
+
+function requestSubChunks(cx, cz) {
+  const botY = state.pos?.y ?? 64;
+  const centerSub = Math.floor((botY + 64) / 16);
+  const requests = [];
+  // Request sub-chunks around bot Y, allowing negative offsets for deep terrain.
+  // origin.y = -4 (world minimum sub-chunk), dy is offset from that.
+  for (let r = -3; r <= 3; r++) {
+    const dy = centerSub + r;
+    if (dy >= -4 && dy <= 19) requests.push({ x: 0, y: dy, z: 0 });
+  }
+  if (requests.length === 0) return;
+  try {
+    setupSubchunkSerializer();
+    // Offsets (x/y/z) are i8 relative to origin; origin holds the absolute chunk coords (li32).
+    client.write('subchunk_request', {
+      dimension: 0,
+      requests,
+      origin: { x: cx, y: -4, z: cz },
+    });
+    log('Rq cx=' + cx + ' cz=' + cz + ' center=' + centerSub + ' count=' + requests.length);
+  } catch(e) { log('Rq err: ' + e.message); }
+}
+
 function connect() {
   _initialized = false;
   _pendingSubchunkRequests.length = 0;
@@ -471,57 +525,6 @@ client.on('level_chunk', (pkt) => {
     });
 });
 
-let _subchunkSerializerPatched = false;
-
-function setupSubchunkSerializer() {
-  if (_subchunkSerializerPatched || !client.serializer) return;
-  _subchunkSerializerPatched = true;
-
-  const wCtx = client.serializer.proto.writeCtx;
-  const sCtx = client.serializer.proto.sizeOfCtx;
-
-  // Correct order per gophertunnel: dimension(varint32) → offsets(varuint32 + i8×3[]) → position(3×li32)
-  wCtx.packet_subchunk_request = function(value, buffer, offset) {
-    offset = wCtx.zigzag32(value.dimension, buffer, offset);
-    offset = wCtx.varint(value.requests.length, buffer, offset);
-    for (let i = 0; i < value.requests.length; i++) {
-      offset = wCtx.i8(value.requests[i].x, buffer, offset);
-      offset = wCtx.i8(value.requests[i].y, buffer, offset);
-      offset = wCtx.i8(value.requests[i].z, buffer, offset);
-    }
-    offset = wCtx.li32(value.origin.x, buffer, offset);
-    offset = wCtx.li32(value.origin.y, buffer, offset);
-    offset = wCtx.li32(value.origin.z, buffer, offset);
-    return offset;
-  };
-  sCtx.packet_subchunk_request = function(value) {
-    return sCtx.zigzag32(value.dimension) +
-           sCtx.varint(value.requests.length) + value.requests.length * 3 +
-           12;
-  };
-}
-
-function requestSubChunks(cx, cz) {
-  const botY = state.pos?.y ?? 64;
-  const centerSub = Math.floor((botY + 64) / 16);
-  const requests = [];
-  // Request sub-chunks around bot Y, allowing negative offsets for deep terrain.
-  // origin.y = -4 (world minimum sub-chunk), dy is offset from that.
-  for (let r = -3; r <= 3; r++) {
-    const dy = centerSub + r;
-    if (dy >= -4 && dy <= 19) requests.push({ x: 0, y: dy, z: 0 });
-  }
-  try {
-    setupSubchunkSerializer();
-    client.write('subchunk_request', {
-      dimension: 0,
-      requests: [{ x: 0, y: cx, z: cz }, ...requests],
-      origin: { x: cx, y: -4, z: cz },
-    });
-    log('Rq cx=' + cx + ' cz=' + cz + ' center=' + centerSub + ' count=' + requests.length);
-  } catch(e) { log('Rq err: ' + e.message); }
-}
-
 client.on('subchunk', (pkt) => {
   log('Subchunk pkt: origin=(' + pkt.origin.x + ',' + pkt.origin.y + ',' + pkt.origin.z + ') cache=' + pkt.cache_enabled + ' entries=' + (pkt.entries ? pkt.entries.length : 0));
   if (!pkt || !pkt.entries) return;
@@ -723,8 +726,9 @@ function handle(cmd, outputFn = output) {
       const cx = Math.floor(x / 16);
       const cz = Math.floor(z / 16);
       for (let dx = -scope; dx <= scope; dx++)
-        for (let dz = -scope; dz <= scope; dz++)
-          requestSubChunks(cx + dx, cz + dz);
+        for (let dz = -scope; dz <= scope; dz++) {
+          try { requestSubChunks(cx + dx, cz + dz); } catch (e) { log('requestSubChunksNear err: ' + e.message); }
+        }
     },
   };
   handleCommand(cmd, ctx, outputFn);
