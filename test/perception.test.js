@@ -15,7 +15,7 @@ function makeChunk(cx, cz, blocks = {}) {
   const subChunks = new Map();
   for (const [key, val] of Object.entries(blocks)) {
     const [lx, ly, lz] = key.split(',').map(Number);
-    const cy = Math.floor(ly / 16);
+    const cy = Math.floor((ly + 64) / 16);
     if (!subChunks.has(cy)) subChunks.set(cy, new Uint32Array(4096));
     const idx = (lx << 8) | (lz << 4) | (ly & 0xf);
     subChunks.get(cy)[idx] = val.stateId ?? 0;

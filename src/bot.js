@@ -136,35 +136,7 @@ client.on('level_chunk', (pkt) => {
     });
 });
 
-let _subchunkSerializerPatched = false;
 
-function setupSubchunkSerializer() {
-  if (_subchunkSerializerPatched || !client.serializer) return;
-  _subchunkSerializerPatched = true;
-  
-  const wCtx = client.serializer.proto.writeCtx;
-  const sCtx = client.serializer.proto.sizeOfCtx;
-  
-  // Correct format (from protocol experimentation): dimension → offsets → position
-  wCtx.packet_subchunk_request = function(value, buffer, offset) {
-    offset = wCtx.zigzag32(value.dimension, buffer, offset);
-    offset = wCtx.varint(value.requests.length, buffer, offset);
-    for (let i = 0; i < value.requests.length; i++) {
-      offset = wCtx.i8(value.requests[i].x, buffer, offset);
-      offset = wCtx.i8(value.requests[i].y, buffer, offset);
-      offset = wCtx.i8(value.requests[i].z, buffer, offset);
-    }
-    offset = wCtx.li32(value.origin.x, buffer, offset);
-    offset = wCtx.li32(value.origin.y, buffer, offset);
-    offset = wCtx.li32(value.origin.z, buffer, offset);
-    return offset;
-  };
-  sCtx.packet_subchunk_request = function(value) {
-    return sCtx.zigzag32(value.dimension) + 
-           sCtx.varint(value.requests.length) + 
-           value.requests.length * 3 + 12;
-  };
-}
 
 function requestSubChunks(cx, cz) {
   const botY = state.pos?.y ?? 64;
@@ -172,21 +144,20 @@ function requestSubChunks(cx, cz) {
   const requests = [];
   for (let r = -3; r <= 3; r++) {
     const dy = centerSub + r;
-    if (dy >= 0 && dy <= 23) requests.push({ x: 0, y: dy, z: 0 });
+    if (dy >= 0 && dy <= 23) requests.push({ dx: 0, dy, dz: 0 });
   }
   try {
-    setupSubchunkSerializer();
     client.write('subchunk_request', {
       dimension: 0,
-      requests,
       origin: { x: cx, y: 0, z: cz },
+      requests,
     });
     log('Rq cx=' + cx + ' cz=' + cz + ' center=' + centerSub + ' count=' + requests.length);
   } catch(e) { log('Rq err: ' + e.message); }
 }
 
 client.on('subchunk', (pkt) => {
-  log('Subchunk pkt: ' + (pkt ? 'has entries=' + (pkt.entries ? pkt.entries.length : 'missing') + ' cache=' + pkt.cache_enabled : 'null'));
+  log('Subchunk pkt: origin=(' + pkt.origin.x + ',' + pkt.origin.y + ',' + pkt.origin.z + ') cache=' + pkt.cache_enabled + ' entries=' + (pkt.entries ? pkt.entries.length : 0));
   if (!pkt || !pkt.entries) return;
   for (const entry of pkt.entries) {
     if (entry.result !== 'success' && entry.result !== 'success_all_air') {
@@ -262,8 +233,12 @@ function handle(cmd) {
         client.queue('text', buildChat(cmd.message));
         return ok({ sent: true });
 
+
       case 'say':
-        client.queue('text', buildChat(cmd.message, 'chat'));
+        if (!SEND_CMD) return ok({ error: 'No SEND_CMD configured' });
+        const sayCmd = 'say <ClawBot> ' + (cmd.message ?? '');
+        const sayParts = SEND_CMD.split(/\s+/);
+        execFileSync(sayParts[0], [...sayParts.slice(1), sayCmd], { timeout: 5000 });
         return ok({ sent: true });
 
       case 'whisper':
@@ -412,6 +387,15 @@ function handle(cmd) {
         }, 50);
 
         return ok({ walking: true, steps: allSteps.length, path: wPath });
+      }
+
+      case 'cmd': {
+        if (!SEND_CMD) return ok({ error: 'No SEND_CMD configured' });
+        const cmdStr = cmd.cmd ?? cmd.command;
+        if (!cmdStr) return ok({ error: 'Need cmd field' });
+        const parts = SEND_CMD.split(/\s+/);
+        execFileSync(parts[0], [...parts.slice(1), cmdStr], { timeout: 5000 });
+        return ok({ cmd: cmdStr });
       }
 
       case 'status': {

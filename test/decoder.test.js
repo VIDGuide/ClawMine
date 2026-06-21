@@ -46,7 +46,7 @@ describe('decoder', () => {
 
     it('updates individual blocks', () => {
       const subChunks = new Map();
-      subChunks.set(0, new Uint32Array(4096));
+      subChunks.set(4, new Uint32Array(4096));
       const chunk = { x: 0, z: 0, subChunks };
 
       const updated = applyBlockUpdates(chunk, [
@@ -54,9 +54,9 @@ describe('decoder', () => {
       ]);
 
       const idx = (5 << 8) | (5 << 4) | 0;
-      assert.equal(updated.subChunks.get(0)[idx], 2532);
+      assert.equal(updated.subChunks.get(4)[idx], 2532);
       // Original chunk is not mutated
-      assert.equal(subChunks.get(0)[idx], 0);
+      assert.equal(subChunks.get(4)[idx], 0);
     });
   });
 });

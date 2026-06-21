@@ -70,8 +70,10 @@ export function buildChat(message, type = 'raw') {
   const pkt = {
     type,
     needs_translation: false,
+    category: 'message_only',
     xuid: '',
     platform_chat_id: '',
+    has_filtered_message: false,
   };
 
   if (type === 'chat' || type === 'whisper') {
