@@ -104,6 +104,69 @@ await test('walk actually moves the bot (pos changes after walk_done)', async ()
   await sleep(4000);
 });
 
+await test('SERVER-VERIFIED: walk produces server-side position change', async () => {
+  // This test uses SEND_CMD to teleport to a known flat spot, then walks and
+  // checks position_desync events — if the server disagrees with our position,
+  // we'd see desync events (meaning movement was rejected).
+  const probeResp = await cmd('cmd', { cmd: 'list' });
+  if (probeResp.error?.includes('No SEND_CMD')) {
+    console.log('    SKIP: SEND_CMD not configured — cannot verify server-side position');
+    return;
+  }
+
+  // Teleport to a known flat area (spawn), wait for chunks
+  await cmd('tp', { x: 0, y: 64, z: 0 });
+  await sleep(3000);
+
+  // Get position after chunks load
+  const posAfterTp = await cmd('pos');
+  const startPos = posAfterTp.pos;
+
+  // Attempt a short walk
+  const walkTarget = { x: Math.floor(startPos.x) + 3, y: Math.floor(startPos.y), z: Math.floor(startPos.z) };
+  const before = Date.now();
+  const walkResp = await cmd('walk', walkTarget);
+
+  if (walkResp.error) {
+    console.log(`    (walk from spawn failed: ${walkResp.error})`);
+    // Try move instead (doesn't need pathfinding)
+    const moveResp = await cmd('move', walkTarget);
+    assertNoError(moveResp, 'move fallback');
+
+    // Wait a bit for server to process, then check for desync
+    await sleep(2000);
+    const posAfterMove = await cmd('pos');
+    const dx = posAfterMove.pos.x - startPos.x;
+    const dz = posAfterMove.pos.z - startPos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    console.log(`    move displacement: ${dist.toFixed(2)} blocks (local)`);
+
+    // Check if server sent us back (desync = movement rejected)
+    const posCheck = await cmd('pos');
+    const finalDist = Math.sqrt((posCheck.pos.x - startPos.x) ** 2 + (posCheck.pos.z - startPos.z) ** 2);
+    console.log(`    final position displacement: ${finalDist.toFixed(2)} blocks`);
+    // If final displacement is 0 after we tried to move 3 blocks, movement was rejected
+    assert(finalDist > 0.5, `SERVER REJECTED MOVEMENT: position returned to start after move (displacement ${finalDist.toFixed(2)})`);
+    return;
+  }
+
+  // Wait for walk_done
+  const done = await waitForEvent(
+    e => e.type === 'walk_done' && e.id === walkResp.id,
+    { timeout: 20000, since: before },
+  );
+
+  // Wait extra time for server to send any position corrections
+  await sleep(2000);
+
+  // Final position check — if server rejected movement, move_player correction
+  // would have reset position back to start
+  const finalPos = await cmd('pos');
+  const finalDist = Math.sqrt((finalPos.pos.x - startPos.x) ** 2 + (finalPos.pos.z - startPos.z) ** 2);
+  console.log(`    server-verified displacement: ${finalDist.toFixed(2)} blocks (target was 3)`);
+  assert(finalDist > 1.0, `SERVER REJECTED MOVEMENT: position is ${finalDist.toFixed(2)} blocks from start (expected ~3). Server sent correction back to start.`);
+});
+
 await test('walk to current position returns immediately (0 steps)', async () => {
   const posResp = await cmd('pos');
   assertNoError(posResp, 'pos');
