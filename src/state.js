@@ -25,7 +25,9 @@ export function applyMovePlayer(state, pkt) {
     yaw: pkt.yaw ?? state.yaw,
     pitch: pkt.pitch ?? state.pitch,
     headYaw: pkt.head_yaw ?? state.headYaw,
-    runtimeId: pkt.runtime_id ?? state.runtimeId,
+    // Note: runtimeId is intentionally NOT updated here. It is set once from
+    // start_game / self add_player. Updating it from move_player would let another
+    // entity's packet hijack our identity.
   };
 }
 

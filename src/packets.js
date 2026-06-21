@@ -39,17 +39,26 @@ export function buildPlayerAuthInput(state, x, y, z, yawVal, pitchVal, inputMode
   // Server-authoritative block breaking: actions are carried in the auth-input stream.
   // opts.blockActions = [{ action: 'start_break'|'crack_break'|'predict_break'|..., position: {x,y,z}, face }]
   const blockActions = Array.isArray(opts.blockActions) ? opts.blockActions : null;
+  // Compute delta from current state position to target
+  const dx = state.pos ? x - state.pos.x : 0;
+  const dy = state.pos ? y - state.pos.y : 0;
+  const dz = state.pos ? z - state.pos.z : 0;
+  // move_vector is the 2D input direction (normalized XZ)
+  const hLen = Math.sqrt(dx * dx + dz * dz);
+  const moveX = hLen > 0.001 ? dx / hLen : 0;
+  const moveZ = hLen > 0.001 ? dz / hLen : 0;
+  const isMoving = Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001 || Math.abs(dy) > 0.001;
   const pkt = {
     pitch: pitchVal ?? state.pitch ?? 0,
     yaw: yawVal ?? state.yaw ?? 0,
     position: { x, y, z },
-    move_vector: { x: 0, z: 0 },
+    move_vector: { x: moveX, z: moveZ },
     head_yaw: yawVal ?? state.headYaw ?? 0,
     input_data: {
       ascend: false, descend: false, north_jump: false, jump_down: false,
       sprint_down: sprinting, change_height: false, jumping: false,
       auto_jumping_in_water: false, sneaking: false, sneak_down: false,
-      up: false, down: false, left: false, right: false,
+      up: isMoving, down: false, left: false, right: false,
       up_left: false, up_right: false, want_up: false, want_down: false,
       want_down_slow: false, want_up_slow: false, sprinting,
       ascend_block: false, descend_block: false, sneak_toggle_down: false,
@@ -74,10 +83,10 @@ export function buildPlayerAuthInput(state, x, y, z, yawVal, pitchVal, inputMode
     interaction_model: 'touch',
     interact_rotation: { x: 0, z: 0 },
     tick: opts.tick ?? 0n,
-    delta: { x: 0, y: 0, z: 0 },
-    analogue_move_vector: { x: 0, z: 0 },
+    delta: { x: dx, y: dy, z: dz },
+    analogue_move_vector: { x: moveX, z: moveZ },
     camera_orientation: { x: 0, y: 0, z: 0 },
-    raw_move_vector: { x: 0, z: 0 },
+    raw_move_vector: { x: moveX, z: moveZ },
   };
   if (blockActions) {
     pkt.block_action = blockActions.map(a => ({

@@ -29,7 +29,8 @@ describe('state', () => {
     assert.equal(updated.yaw, 1.2);
     assert.equal(updated.pitch, -0.5);
     assert.equal(updated.headYaw, 1.2);
-    assert.equal(updated.runtimeId, 42);
+    // runtimeId is intentionally NOT updated from move_player (set from start_game only)
+    assert.equal(updated.runtimeId, null);
   });
 
   it('preserves existing position on null packet', () => {

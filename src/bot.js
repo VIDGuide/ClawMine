@@ -20,7 +20,7 @@ import { execFileSync } from 'child_process';
 import { createState, applyMovePlayer } from './state.js';
 import { buildPlayerAuthInput } from './packets.js';
 import { createEntityTracker, handleAddPlayer, handleAddEntity, handleAddItemEntity, handleMoveEntity, handleRemoveEntity, handlePlayerList } from './entities.js';
-import { createChunkCache, setChunk, chunkKeyFromPos, evictChunks } from './chunks.js';
+import { createChunkCache, setChunk, chunkKeyFromPos, evictChunks, getBlock } from './chunks.js';
 import { decodeSubChunkBuffer } from './blocks.js';
 import { decodeLevelChunk, applyBlockUpdates } from './decoder.js';
 import { createChatConfig, processIncoming } from './chat.js';
@@ -220,6 +220,16 @@ client.on('spawn', () => {
       _authTick = tick;
       const ba = _pendingBlockAction;
       _pendingBlockAction = null;
+
+      // Basic gravity: if no solid block below feet and not actively walking, fall
+      if (!_activeWalk) {
+        const groundBlock = getBlock(chunkCache, Math.floor(state.pos.x), Math.floor(state.pos.y) - 1, Math.floor(state.pos.z));
+        if (groundBlock && groundBlock.name === 'minecraft:air') {
+          const newY = state.pos.y - 0.5;
+          state = { ...state, pos: { ...state.pos, y: newY } };
+        }
+      }
+
       client.queue('player_auth_input', buildPlayerAuthInput(
         state, state.pos.x, state.pos.y, state.pos.z, state.yaw, state.pitch, 'mouse',
         { tick, blockActions: ba ? [ba] : undefined },
@@ -449,6 +459,14 @@ let _tpAt = 0;
 
 client.on('move_player', (pkt) => {
   if (!pkt) return;
+  // CRITICAL: only apply move_player packets addressed to our OWN entity. The server
+  // broadcasts move_player for every player/entity; without this filter the bot adopts
+  // other entities' positions (and even their runtime IDs), corrupting its own position
+  // and breaking reach checks for mine/place/interact.
+  if (state.runtimeId && pkt.runtime_id !== undefined &&
+      Number(pkt.runtime_id) !== Number(state.runtimeId)) {
+    return;
+  }
   // Skip one packet after teleport
   if (Date.now() < _ignoreMoveUntil) return;
 
