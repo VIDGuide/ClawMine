@@ -138,14 +138,18 @@ export function getBlocks(cache, x1, y1, z1, x2, y2, z2, filter) {
   const maxY = Math.max(y1, y2);
   const minZ = Math.min(z1, z2);
   const maxZ = Math.max(z1, z2);
+  const pattern = filter ? filter.replace(/^minecraft:/, '').toLowerCase() : null;
 
   for (let x = minX; x <= maxX; x++) {
     for (let y = minY; y <= maxY; y++) {
       for (let z = minZ; z <= maxZ; z++) {
         const block = getBlock(cache, x, y, z);
-        if (block && (!filter || block.name === filter)) {
-          results.push({ x, y, z, ...block });
+        if (!block) continue;
+        if (pattern) {
+          const name = (block.name || '').replace(/^minecraft:/, '').toLowerCase();
+          if (!name.includes(pattern)) continue;
         }
+        results.push({ x, y, z, ...block });
       }
     }
   }

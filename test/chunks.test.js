@@ -175,6 +175,33 @@ describe('chunks', () => {
       const ids = results.map(r => r.stateId).sort();
       assert.deepEqual(ids, [1, 3]);
     });
+
+    it('filter matches without minecraft: prefix (substring)', () => {
+      let cache = createChunkCache();
+      // stateId 3 won't resolve in palette → name = "state_3"
+      const chunk = fakeChunk(0, 0, {
+        '5,64,5': { stateId: 3 },
+        '6,64,6': { stateId: 1 },
+      });
+      cache = setChunk(cache, 0, 0, chunk);
+
+      // Filter by "state_3" should match the block with that name
+      const results = getBlocks(cache, 0, 64, 0, 15, 64, 15, 'state_3');
+      assert.equal(results.length, 1);
+      assert.equal(results[0].stateId, 3);
+    });
+
+    it('filter is case-insensitive and strips minecraft: prefix', () => {
+      let cache = createChunkCache();
+      const chunk = fakeChunk(0, 0, {
+        '5,64,5': { stateId: 3 },
+      });
+      cache = setChunk(cache, 0, 0, chunk);
+
+      // "STATE_3" should match "state_3"
+      const results = getBlocks(cache, 0, 64, 0, 15, 64, 15, 'STATE_3');
+      assert.equal(results.length, 1);
+    });
   });
 
   describe('chunkStatus', () => {
