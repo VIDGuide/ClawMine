@@ -264,7 +264,16 @@ function handle(cmd) {
     switch (cmd.action) {
 
       case 'chat':
-        client.queue('text', buildChat(cmd.message));
+        client.queue('text', {
+          type: 'chat',
+          needs_translation: false,
+          category: 'authored',
+          source_name: USERNAME,
+          message: cmd.message,
+          xuid: '',
+          platform_chat_id: '',
+          has_filtered_message: false,
+        });
         return ok({ sent: true });
 
       case 'say':

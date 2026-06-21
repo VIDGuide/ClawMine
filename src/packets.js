@@ -66,18 +66,24 @@ export function buildPlayerAuthInput(state, x, y, z, yawVal, pitchVal, inputMode
  * Build a text (chat) packet.
  * Type: 'raw' | 'chat' | 'whisper' | 'system'
  */
-export function buildChat(message, type = 'raw') {
+export function buildChat(message, type = 'raw', sourceName = '') {
+  // Category determines how the message is styled in chat:
+  //   'authored' — player-authored messages (shown with player name)
+  //   'message_only' — system/message-of-the-day style (no name prefix)
+  //   'parameters' — formatted messages with parameters
+  const category = (type === 'chat' || type === 'whisper') ? 'authored' : 'message_only';
+
   const pkt = {
     type,
     needs_translation: false,
-    category: 'message_only',
+    category,
     xuid: '',
     platform_chat_id: '',
     has_filtered_message: false,
   };
 
   if (type === 'chat' || type === 'whisper') {
-    pkt.source_name = '';
+    pkt.source_name = sourceName;
     pkt.message = message;
   } else {
     pkt.message = message;
