@@ -47,7 +47,7 @@ describe('handle() integration', () => {
     try {
       const lines = await readLines(proc, 1);
       assert.equal(lines[0].type, 'startup');
-      assert.equal(lines[0].version, '0.4.0');
+      assert.equal(lines[0].version, '0.5.0');
     } finally {
       proc.kill();
     }

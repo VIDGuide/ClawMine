@@ -123,7 +123,7 @@ describe('skill integration', () => {
     try {
       const startup = await waitForStartup(eventsFile);
       assert.equal(startup.type, 'startup');
-      assert.equal(startup.version, '0.4.0');
+      assert.equal(startup.version, '0.5.0');
       assert.ok(typeof startup.timestamp === 'number');
     } finally {
       proc.kill();

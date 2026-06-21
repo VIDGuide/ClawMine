@@ -30,7 +30,7 @@ Existing Minecraft bots assume a human operator. ClawMine assumes an **AI agent*
 │  • Chunk decoding         │  • Emotes                      │
 │  • Block awareness        │  • Paced pathfinding walk      │
 │  • Named blocks           │  • Server commands             │
-│  • A* pathfinding         │  • Block breaking (🔜 Layer 5) │
+│  • A* pathfinding         │  • Mine, eat, drop, throw      │
 └───────────────────────────┴───────────────────────────────┘
        │ RakNet UDP
 ┌──────┴────────────────────────────────────────────────────┐
@@ -47,7 +47,7 @@ Existing Minecraft bots assume a human operator. ClawMine assumes an **AI agent*
 | 2. World awareness (entities) | ✅ | Players, mobs, items, emotes |
 | 3. World awareness (blocks) | ✅ | Chunk decoding, block map, named blocks, scan |
 | 4. Navigation | ✅ | A* pathfinding on the block map |
-| 5. Interaction | 🔜 | Mining, placing, containers |
+| 5. Interaction | ✅ | Mining, eating, dropping, throwing, giving, interactions, attacking |
 
 ## Commands (for the AI agent)
 
@@ -56,6 +56,7 @@ Send JSON commands via stdin, one per line. Responses come back on stdout.
 ```json
 {"action":"pos"}
 {"action":"status"}
+{"action":"vitals"}
 {"action":"chat","message":"Hello world"}
 {"action":"say","message":"Visible chat message"}
 {"action":"whisper","to":"Michael","message":"private message"}
@@ -74,15 +75,32 @@ Send JSON commands via stdin, one per line. Responses come back on stdout.
 {"action":"raycast","x":50,"y":64,"z":50}
 {"action":"path","x":50,"y":64,"z":50}
 {"action":"walk","x":50,"y":64,"z":50}
+{"action":"abort_walk"}
 {"action":"reachable","x":50,"y":64,"z":50}
 {"action":"distance","x":50,"y":64,"z":50}
+{"action":"inventory"}
+{"action":"equip","item":"diamond_pickaxe"}
+{"action":"unequip","target":"offhand"}
+{"action":"mine","x":10,"y":64,"z":10,"autoTool":true}
+{"action":"abort_mine"}
+{"action":"eat","item":"cooked_beef"}
+{"action":"abort_eat"}
+{"action":"drop","slot":0,"count":1}
+{"action":"throw","x":50,"y":64,"z":50}
+{"action":"give","to":"Michael","item":"diamond","count":1}
+{"action":"interact","x":10,"y":64,"z":10}
+{"action":"sleep","x":10,"y":64,"z":20}
+{"action":"place","item":"cobblestone","x":10,"y":65,"z":20}
+{"action":"find","block":"iron_ore","radius":32,"count":5}
+{"action":"attack","entity":"zombie"}
 {"action":"cmd","cmd":"time set day"}
 ```
 
 | Command | Layer | Description |
 |---------|-------|-------------|
 | `pos` | 1 | Get current position and rotation |
-| `status` | 1 | Bot health: uptime, loaded chunks, entity counts, position |
+| `status` | 1 | Bot health: uptime, loaded chunks, entity counts, position, vitals summary |
+| `vitals` | 1 | Full vitals: health, hunger, saturation, absorption, breath, active effects |
 | `chat` | 0 | Send a raw-text message |
 | `say` | 0 | Send a server `/say` message (requires `SEND_CMD`) |
 | `whisper` | 0 | Send a private message to a named player (needs `to`) |
@@ -101,8 +119,24 @@ Send JSON commands via stdin, one per line. Responses come back on stdout.
 | `raycast` | 3 | Line-of-sight check between two points |
 | `path` | 4 | Compute an A* path to a target (no movement) |
 | `walk` | 4 | Pathfind and walk to a target (paced, async) |
+| `abort_walk` | 4 | Cancel an in-progress walk operation |
 | `reachable` | 4 | Check if a target is reachable (pathfind with limit, no movement) |
 | `distance` | 4 | Euclidean distance and direction vector to a target (no pathfinding) |
+| `inventory` | 5 | Query current inventory, armor, held item (optional `view:"summary"`) |
+| `equip` | 5 | Equip item by `item` name or `slot` number (0-8 hotbar) |
+| `unequip` | 5 | Unequip armor/offhand by `target` (helmet/chestplate/leggings/boots/offhand) |
+| `mine` | 5 | Break a block at coordinates (async, emits `mine_done`; optional `autoTool`) |
+| `abort_mine` | 5 | Cancel an in-progress mine operation |
+| `eat` | 5 | Consume held food item (async, emits `eat_done`; optional `item` to auto-equip) |
+| `abort_eat` | 5 | Cancel an in-progress eat operation |
+| `drop` | 5 | Drop items from inventory (`slot`, `count`) |
+| `throw` | 5 | Throw a held projectile item (egg, snowball, ender pearl) |
+| `give` | 5 | Drop items toward a nearby player (`to`, `item`, `count`) |
+| `interact` | 5 | Interact with a block (doors, levers, buttons, trapdoors, beds) |
+| `attack` | 5 | Attack a nearby entity by name or runtime ID |
+| `sleep` | 5 | Sleep in a bed at the given coordinates |
+| `place` | 5 | Place a block item from inventory at a target position (auto-detects face) |
+| `find` | 3 | Search loaded chunks for nearest block(s) matching a name pattern |
 | `cmd` | 0 | Pass an arbitrary command to the server (requires `SEND_CMD`) |
 
 ### Scan response: `loaded` field
@@ -121,10 +155,12 @@ Send JSON commands via stdin, one per line. Responses come back on stdout.
 Some commands return immediately and emit a follow-up event:
 
 - `walk` → `{"type":"response","walking":true,"steps":N,"path":[...]}` then `{"type":"walk_done","id":N,"walked":N,"pos":{...}}`
+- `mine` → `{"type":"response","mining":true,"block":"...","breakTime":N}` then `{"type":"mine_done","id":N,"block":"...","pos":{...},"ticks":N}`
+- `eat` → `{"type":"response","eating":true,"item":"...","duration":1610}` then `{"type":"eat_done","id":N,"item":"..."}`
 
 Other unsolicited events:
 
-- `{"type":"startup","version":"0.4.0","timestamp":N}` — emitted on launch
+- `{"type":"startup","version":"0.5.0","timestamp":N}` — emitted on launch
 - `{"type":"ready","timestamp":N}` / `{"type":"spawn","timestamp":N}` — connection lifecycle
 - `{"type":"msg","from":"...","msg":"...","direct":bool,"whisper":bool,"system":bool,"timestamp":N}` — incoming chat
 - `{"type":"emote","from":"...","emote":"wave","emoteId":"...","known":bool,"timestamp":N}` — player emote
@@ -135,8 +171,32 @@ Other unsolicited events:
 - `{"type":"player_nearby","name":"...","uuid":"...","zone":"close|near","distance":N,"timestamp":N}` — player crossed proximity threshold toward bot
 - `{"type":"player_left_nearby","name":"...","uuid":"...","zone":"close|near","distance":N,"timestamp":N}` — player moved away from bot
 - `{"type":"shutdown","timestamp":N}` — emitted on graceful shutdown
+- `{"type":"item_added","item":{...},"slot":N,"windowId":"...","source":"pickup","entityPosition":{...},"timestamp":N}` — item appeared in inventory (source/entityPosition present if correlated with pickup)
+- `{"type":"item_removed","item":{...},"slot":N,"windowId":"...","timestamp":N}` — item disappeared from inventory
+- `{"type":"tool_broken","item":{...},"slot":N,"windowId":"...","timestamp":N}` — durable item broke (durability exhausted)
+- `{"type":"item_damaged","item":{...},"slot":N,"windowId":"...","previousDurability":N,"durability":N,"timestamp":N}` — item durability decreased
+- `{"type":"item_count_changed","item":{...},"slot":N,"windowId":"...","oldCount":N,"newCount":N,"timestamp":N}` — item stack count changed
+- `{"type":"damage_taken","cause":"attack|fall|drown|starvation|unknown","health":{"old":N,"new":N,"max":N},"timestamp":N}` — health decreased (causally grouped)
+- `{"type":"health_restored","cause":"regeneration|natural_regeneration","health":{"old":N,"new":N,"max":N},"timestamp":N}` — health increased
+- `{"type":"hunger_changed","hunger":{"old":N,"new":N,"max":N},"timestamp":N}` — hunger changed without health change
+- `{"type":"effect_added","effect":"speed","effectId":N,"amplifier":N,"duration":N,"timestamp":N}` — status effect applied
+- `{"type":"effect_updated","effect":"poison","effectId":N,"amplifier":N,"duration":N,"timestamp":N}` — effect amplifier/duration changed
+- `{"type":"effect_removed","effect":"regeneration","effectId":N,"timestamp":N}` — status effect expired/removed
+- `{"type":"death","cause":"...","messages":[...],"timestamp":N}` — bot died
+- `{"type":"death_details","pos":{...},"items":[...],"cause":"...","messages":[...],"timestamp":N}` — snapshot at death (inventory + position)
+- `{"type":"respawn","timestamp":N}` — bot respawned
 
 All events carry a `timestamp` (Unix ms).
+
+New in this release:
+- `{"type":"danger","threat":"zombie","distance":5.2,"entityType":32,"runtimeId":N,"pos":{...},"timestamp":N}` — hostile mob nearby, or low health/hunger
+- `{"type":"sleep_started","bedPos":{...},"timestamp":N}` — bot began sleeping
+- `{"type":"disconnected","reason":"...","timestamp":N}` — connection lost
+- `{"type":"reconnecting","attempt":N,"delay":N,"timestamp":N}` — reconnect attempt
+- `{"type":"reconnected","timestamp":N}` — reconnected successfully
+- `{"type":"chunks_evicted","count":N,"remaining":N,"timestamp":N}` — LRU cache eviction
+- `{"type":"command_timeout","command":"mine","id":N,"timestamp":N}` — stuck command aborted
+- `{"type":"position_desync","serverPos":{...},"localPos":{...},"drift":N,"mode":"teleport","timestamp":N}` — position correction
 
 ## Chat & incoming messages
 
@@ -274,6 +334,14 @@ HOST=192.168.1.10 PORT=19132 USERNAME=ClawBot npm start
 | `CHAT_PREFIX` | (empty) | Required prefix for a message to count as directed at the bot |
 | `CLAWMINE_PORT` | `3001` | TCP port for the skill command server |
 | `CLAWMINE_EVENTS` | `./events.jsonl` | Path to the JSONL event log |
+| `CLAWMINE_RESPAWN` | `false` | Auto-respawn on death |
+| `CLAWMINE_RECONNECT` | `false` | Auto-reconnect on disconnect (exponential backoff) |
+| `CLAWMINE_MAX_EVENTS_MB` | `5` | Max events.jsonl size before rotation |
+| `CLAWMINE_CHUNK_CACHE_MAX` | `512` | Max chunks in memory (LRU eviction) |
+| `CLAWMINE_CHUNK_EVICT_DIST` | `256` | Distance threshold for chunk eviction (blocks) |
+| `CLAWMINE_DANGER_MOB_DIST` | `8` | Hostile mob proximity for danger alerts (blocks) |
+| `CLAWMINE_DANGER_HEALTH` | `6` | Health threshold for low-health danger alerts |
+| `CLAWMINE_DANGER_HUNGER` | `4` | Hunger threshold for low-hunger danger alerts |
 
 ## Teleport Setup
 
@@ -289,6 +357,7 @@ SEND_CMD="docker exec minecraft-survival send-command" npm start
 ```
 src/
   bot.js          — Entry point: stdin loop, TCP server, event wiring, command dispatch
+  commands.js     — Command handlers: all action dispatch logic (extracted from bot.js)
   state.js        — Pure state management (position, rotation, connection)
   math.js         — Coordinate math (face angles, walk steps)
   packets.js      — Packet structure builders
@@ -296,7 +365,7 @@ src/
   chunks.js       — Block/chunk cache, block queries, scan/look/raycast perception
   blocks.js       — Standalone Bedrock sub-chunk decoder (palette + word storage)
   decoder.js      — level_chunk / subchunk packet decoding
-  pathfinding.js  — A* pathfinding (binary-heap priority queue)
+  navigation.js   — Block classification + cost-aware A* pathfinding (doors, ladders, hazards)
   chat.js         — Incoming chat filtering, whitelist, prefix, sanitization
   emotes.js       — Emote UUID ↔ name mapping
   palette.js      — Runtime block ID → name lookup (loads data/block_palette.json)

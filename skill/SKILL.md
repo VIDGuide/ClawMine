@@ -4,7 +4,7 @@ description: "Control a Minecraft Bedrock bot: navigate the world, interact with
 user-invocable: true
 metadata:
   author: "ClawMine"
-  version: "0.4.0"
+  version: "0.5.0"
   homepage: "https://github.com/misaunders/clawmine"
   license: "MIT"
   tags: ["minecraft", "bedrock", "gaming", "bot", "navigation"]
@@ -57,6 +57,14 @@ All interaction goes through two scripts:
 | `SEND_CMD` | (empty) | Server command tool (required for `tp`, `say`, `cmd` actions) |
 | `CHAT_WHITELIST` | (empty) | Comma-separated player names to accept messages from (empty = all) |
 | `CHAT_PREFIX` | (empty) | Message prefix that marks a message as directed at the bot |
+| `CLAWMINE_RESPAWN` | `false` | Auto-respawn on death (`true`/`false`) |
+| `CLAWMINE_RECONNECT` | `false` | Auto-reconnect on disconnect with exponential backoff |
+| `CLAWMINE_MAX_EVENTS_MB` | `5` | Max events.jsonl size in MB before rotating to `.1` backup |
+| `CLAWMINE_CHUNK_CACHE_MAX` | `512` | Max chunks to keep in memory (LRU eviction) |
+| `CLAWMINE_CHUNK_EVICT_DIST` | `256` | Distance in blocks beyond which stale chunks are evicted |
+| `CLAWMINE_DANGER_MOB_DIST` | `8` | Distance for hostile mob danger alerts (blocks) |
+| `CLAWMINE_DANGER_HEALTH` | `6` | Health threshold for low-health danger alerts |
+| `CLAWMINE_DANGER_HUNGER` | `4` | Hunger threshold for low-hunger danger alerts |
 
 ### Starting the Bot
 
@@ -95,9 +103,13 @@ If you get `BOT_NOT_RUNNING`, the bot is not running or `CLAWMINE_PORT` is wrong
 node $SKILL_DIR/scripts/cmd.js '{"action":"pos"}'
 # Returns: {"type":"response","id":N,"pos":{"x":0,"y":64,"z":0},"yaw":0,"pitch":0}
 
-# Get bot health: uptime, loaded chunks, entity counts, position
+# Get bot status: uptime, loaded chunks, entity counts, position, vitals summary
 node $SKILL_DIR/scripts/cmd.js '{"action":"status"}'
-# Returns: {"type":"response","id":N,"connected":true,"pos":{...},"uptime":N,"chunks":N,"entities":{...}}
+# Returns: {"type":"response","id":N,"connected":true,"pos":{...},"uptime":N,"chunks":N,"entities":{...},"vitals":{"health":20,"maxHealth":20,"hunger":20,"alive":true,"effectCount":0}}
+
+# Get full vitals: health, hunger, saturation, absorption, breath, active effects
+node $SKILL_DIR/scripts/cmd.js '{"action":"vitals"}'
+# Returns: {"type":"response","id":N,"health":20,"maxHealth":20,"hunger":20,"saturation":5,"absorption":0,"breath":0,"level":0,"alive":true,"effects":[]}
 
 # Client-side position set (no server teleport, just updates bot's local state)
 node $SKILL_DIR/scripts/cmd.js '{"action":"setpos","x":0,"y":64,"z":0}'
@@ -150,8 +162,16 @@ node $SKILL_DIR/scripts/cmd.js '{"action":"path","x":50,"y":64,"z":50}'
 
 # Pathfind and walk to target (ASYNC — returns immediately, emits walk_done event when done)
 node $SKILL_DIR/scripts/cmd.js '{"action":"walk","x":50,"y":64,"z":50}'
+# With sprint (30% faster):
+node $SKILL_DIR/scripts/cmd.js '{"action":"walk","x":50,"y":64,"z":50,"sprint":true}'
+# Disable auto-build (pillar/bridge) if you don't want the bot to place blocks:
+node $SKILL_DIR/scripts/cmd.js '{"action":"walk","x":50,"y":64,"z":50,"autoBuild":false}'
 # Returns immediately: {"type":"response","walking":true,"steps":N,"path":[...]}
 # Walk_done event appears in event log when movement completes
+
+# Cancel an in-progress walk
+node $SKILL_DIR/scripts/cmd.js '{"action":"abort_walk"}'
+# Returns: {"type":"response","id":N,"aborted":true,"walked":N,"pos":{...}}
 
 # Check if target is reachable (pathfind with iteration limit, no movement)
 node $SKILL_DIR/scripts/cmd.js '{"action":"reachable","x":50,"y":64,"z":50}'
@@ -172,6 +192,8 @@ node $SKILL_DIR/scripts/cmd.js '{"action":"distance","x":50,"y":64,"z":50}'
 | `face` | `x`,`y`,`z` | number | Yes | Point to look at |
 | `path` | `x`,`y`,`z` | number | Yes | Target coordinates |
 | `walk` | `x`,`y`,`z` | number | Yes | Target coordinates |
+| `walk` | `sprint` | boolean | No | Sprint for ~30% faster travel (default: false) |
+| `walk` | `autoBuild` | boolean | No | Auto-place blocks to pillar/bridge obstacles (default: true) |
 | `reachable` | `x`,`y`,`z` | number | Yes | Target coordinates |
 | `distance` | `x`,`y`,`z` | number | Yes | Target coordinates |
 
@@ -206,6 +228,11 @@ node $SKILL_DIR/scripts/cmd.js '{"action":"look","distance":10}'
 
 # Line-of-sight check from bot's position to a point
 node $SKILL_DIR/scripts/cmd.js '{"action":"raycast","x":50,"y":64,"z":50}'
+
+# Search loaded chunks for nearest block(s) matching a name pattern
+node $SKILL_DIR/scripts/cmd.js '{"action":"find","block":"iron_ore"}'
+node $SKILL_DIR/scripts/cmd.js '{"action":"find","block":"diamond_ore","radius":48,"count":3}'
+# Returns: {"type":"response","id":N,"count":N,"blocks":[{"x":N,"y":N,"z":N,"name":"minecraft:iron_ore","distance":N}]}
 ```
 
 **Perception parameters:**
@@ -222,6 +249,113 @@ node $SKILL_DIR/scripts/cmd.js '{"action":"raycast","x":50,"y":64,"z":50}'
 | `scan` | `radiusY` | number | No | Y radius (default: 2) |
 | `look` | `distance` | number | No | Look distance in blocks (default: 10) |
 | `raycast` | `x`,`y`,`z` | number | Yes | Target point |
+| `find` | `block` | string | Yes | Block name pattern (substring match, e.g. `iron_ore`) |
+| `find` | `radius` | number | No | Search radius in blocks (default: 32) |
+| `find` | `count` | number | No | Max results to return (default: 5) |
+
+### Inventory & Equipment Commands
+
+```bash
+# Query full inventory (all slots, armor, offhand, held item)
+node $SKILL_DIR/scripts/cmd.js '{"action":"inventory"}'
+# Returns: {"type":"response","id":N,"slots":[...],"armor":[...],"offhand":null,"heldSlot":N,"heldItem":{...},"summary":{...}}
+
+# Query summary only (lighter for context)
+node $SKILL_DIR/scripts/cmd.js '{"action":"inventory","view":"summary"}'
+# Returns: {"type":"response","id":N,"heldSlot":N,"heldItem":{...},"summary":{"occupied":N,"total":36,"items":[...]}}
+
+# Equip item by name (searches inventory, moves to hotbar if needed)
+node $SKILL_DIR/scripts/cmd.js '{"action":"equip","item":"diamond_pickaxe"}'
+
+# Equip by hotbar slot number (0-8)
+node $SKILL_DIR/scripts/cmd.js '{"action":"equip","slot":3}'
+
+# Unequip armor piece or offhand back to inventory
+node $SKILL_DIR/scripts/cmd.js '{"action":"unequip","target":"helmet"}'
+node $SKILL_DIR/scripts/cmd.js '{"action":"unequip","target":"offhand"}'
+```
+
+**Inventory parameters:**
+
+| Command | Parameter | Type | Required | Description |
+|---|---|---|---|---|
+| `inventory` | `view` | string | No | `"summary"` for compact view |
+| `equip` | `item` | string | One of item/slot | Item name (fuzzy matched) |
+| `equip` | `slot` | number | One of item/slot | Hotbar slot 0-8 |
+| `unequip` | `target` | string | Yes | `helmet`, `chestplate`, `leggings`, `boots`, or `offhand` |
+
+### Action Commands
+
+```bash
+# Mine a block (async — emits mine_done event when complete)
+node $SKILL_DIR/scripts/cmd.js '{"action":"mine","x":10,"y":64,"z":10}'
+# With auto tool selection:
+node $SKILL_DIR/scripts/cmd.js '{"action":"mine","x":10,"y":64,"z":10,"autoTool":true}'
+# Returns: {"type":"response","id":N,"mining":true,"block":"minecraft:stone","breakTime":6,"tool":"diamond_pickaxe"}
+# Event: {"type":"mine_done","id":N,"block":"minecraft:stone","pos":{"x":10,"y":64,"z":10},"ticks":6}
+
+# Cancel an in-progress mine
+node $SKILL_DIR/scripts/cmd.js '{"action":"abort_mine"}'
+
+# Eat food (async — emits eat_done event when complete)
+node $SKILL_DIR/scripts/cmd.js '{"action":"eat","item":"cooked_beef"}'
+# Returns: {"type":"response","id":N,"eating":true,"item":"cooked_beef","duration":1610}
+# Event: {"type":"eat_done","id":N,"item":"cooked_beef"}
+
+# Cancel eating
+node $SKILL_DIR/scripts/cmd.js '{"action":"abort_eat"}'
+
+# Drop items from inventory
+node $SKILL_DIR/scripts/cmd.js '{"action":"drop","slot":0,"count":1}'
+# Returns: {"type":"response","id":N,"dropped":true,"item":"minecraft:cobblestone","count":1}
+
+# Throw a projectile item (egg, snowball, ender pearl)
+node $SKILL_DIR/scripts/cmd.js '{"action":"throw","x":50,"y":64,"z":50}'
+# Returns: {"type":"response","id":N,"thrown":true,"item":"minecraft:egg"}
+
+# Give items to a nearby player
+node $SKILL_DIR/scripts/cmd.js '{"action":"give","to":"Michael","item":"diamond","count":1}'
+# Returns: {"type":"response","id":N,"given":true,"to":"Michael","item":"minecraft:diamond","count":1,"distance":5}
+
+# Interact with a block (doors, levers, buttons, trapdoors, beds)
+node $SKILL_DIR/scripts/cmd.js '{"action":"interact","x":10,"y":64,"z":10}'
+# Returns: {"type":"response","id":N,"interacted":true,"block":"minecraft:oak_door","pos":{"x":10,"y":64,"z":10}}
+
+# Sleep in a bed (must be night or thunderstorm; emits sleep_started event)
+node $SKILL_DIR/scripts/cmd.js '{"action":"sleep","x":10,"y":64,"z":20}'
+# Returns: {"type":"response","id":N,"sleeping":true,"bedPos":{"x":10,"y":64,"z":20},"block":"minecraft:red_bed"}
+
+# Place a block from inventory at a target air position
+node $SKILL_DIR/scripts/cmd.js '{"action":"place","item":"dirt","x":10,"y":65,"z":20}'
+# Optional: specify which adjacent block face to click (0=bottom,1=top,2=north,3=south,4=west,5=east)
+node $SKILL_DIR/scripts/cmd.js '{"action":"place","item":"cobblestone","x":10,"y":65,"z":20,"face":1}'
+# Returns: {"type":"response","id":N,"placed":true,"block":"dirt","pos":{...},"face":N,"against":{...}}
+
+# Attack a nearby entity (by name or runtime ID)
+node $SKILL_DIR/scripts/cmd.js '{"action":"attack","entity":"zombie"}'
+node $SKILL_DIR/scripts/cmd.js '{"action":"attack","entity":42}'
+# Returns: {"type":"response","id":N,"attacked":true,"entity":{"name":"zombie","runtimeId":42},"distance":3}
+```
+
+**Action parameters:**
+
+| Command | Parameter | Type | Required | Description |
+|---|---|---|---|---|
+| `mine` | `x`,`y`,`z` | number | Yes | Block coordinates |
+| `mine` | `autoTool` | boolean | No | Auto-equip best tool for the block |
+| `eat` | `item` | string | No | Food item name to auto-equip |
+| `drop` | `slot` | number | No | Inventory slot (default: held slot) |
+| `drop` | `count` | number | No | Items to drop (default: full stack) |
+| `throw` | `x`,`y`,`z` | number | No | Direction to face before throwing |
+| `give` | `to` | string | Yes | Target player name |
+| `give` | `item` | string | No | Item name to equip and give |
+| `give` | `count` | number | No | Items to give (default: 1) |
+| `interact` | `x`,`y`,`z` | number | Yes | Block coordinates |
+| `sleep` | `x`,`y`,`z` | number | Yes | Bed block coordinates |
+| `place` | `x`,`y`,`z` | number | Yes | Target air position to place into |
+| `place` | `item` | string | Yes | Block item name to place (e.g. `dirt`, `cobblestone`) |
+| `place` | `face` | number | No | Adjacent face to click (0-5, auto-detected if omitted) |
+| `attack` | `entity` | string/number | Yes | Entity name or runtime ID |
 
 ### Server Control Commands
 
@@ -244,9 +378,13 @@ node $SKILL_DIR/scripts/events.js --last 20
 
 # Get all events
 node $SKILL_DIR/scripts/events.js
+
+# Real-time follow mode: streams new events as they arrive (one JSON per line)
+node $SKILL_DIR/scripts/events.js --follow --since 1750000000000
 ```
 
 Output is always a JSON array: `[{...}, {...}]` or `[]` if no matching events.
+In `--follow` mode, events are output one per line as they arrive.
 
 ### Event Types
 
@@ -264,6 +402,30 @@ Output is always a JSON array: `[{...}, {...}]` or `[]` if no matching events.
 | `player_nearby` | Player crossed proximity threshold toward bot | `name`, `uuid`, `zone`, `distance`, `timestamp` |
 | `player_left_nearby` | Player moved away from proximity zone | `name`, `uuid`, `zone`, `distance`, `timestamp` |
 | `walk_done` | Walk command completed | `id`, `walked`, `pos`, `timestamp` |
+| `mine_done` | Mine command completed | `id`, `block`, `pos`, `ticks`, `timestamp` |
+| `eat_done` | Eat command completed | `id`, `item`, `timestamp` |
+| `item_added` | Item appeared in inventory | `item`, `slot`, `windowId`, `source`, `entityPosition`, `timestamp` |
+| `item_removed` | Item disappeared from inventory | `item`, `slot`, `windowId`, `timestamp` |
+| `tool_broken` | Durable item broke (durability exhausted) | `item`, `slot`, `windowId`, `timestamp` |
+| `item_damaged` | Item durability decreased | `item`, `slot`, `windowId`, `previousDurability`, `durability`, `timestamp` |
+| `item_count_changed` | Item stack count changed | `item`, `slot`, `windowId`, `oldCount`, `newCount`, `timestamp` |
+| `damage_taken` | Bot took damage (causally grouped) | `cause`, `health`, `absorption?`, `hunger?`, `timestamp` |
+| `health_restored` | Bot health increased | `cause`, `health`, `timestamp` |
+| `hunger_changed` | Hunger changed without health change | `hunger`, `timestamp` |
+| `effect_added` | Status effect applied | `effect`, `effectId`, `amplifier`, `duration`, `timestamp` |
+| `effect_updated` | Effect amplifier/duration changed | `effect`, `effectId`, `amplifier`, `duration`, `timestamp` |
+| `effect_removed` | Status effect expired/removed | `effect`, `effectId`, `timestamp` |
+| `death` | Bot died | `cause`, `messages`, `timestamp` |
+| `death_details` | Snapshot at death (inventory + position) | `pos`, `items`, `cause`, `messages`, `timestamp` |
+| `respawn` | Bot respawned | `timestamp` |
+| `sleep_started` | Bot began sleeping in a bed | `bedPos`, `timestamp` |
+| `danger` | Threat detected (mob, low health, or low hunger) | `threat`, `distance?`, `entityType?`, `health?`, `hunger?`, `timestamp` |
+| `disconnected` | Bot lost connection to server | `reason`, `timestamp` |
+| `reconnecting` | Auto-reconnect attempt starting | `attempt`, `delay`, `timestamp` |
+| `reconnected` | Bot successfully reconnected | `timestamp` |
+| `chunks_evicted` | Old/distant chunks evicted from cache | `count`, `remaining`, `timestamp` |
+| `command_timeout` | Async command exceeded watchdog timeout | `command` (mine/eat/walk), `id`, `timestamp` |
+| `position_desync` | Server position differs from bot's local position | `serverPos`, `localPos`, `drift`, `mode`, `timestamp` |
 | `shutdown` | Bot is shutting down | `timestamp` |
 
 **`msg` event fields:**

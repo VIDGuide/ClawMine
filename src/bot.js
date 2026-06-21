@@ -818,7 +818,7 @@ tcpServer.listen(CLAWMINE_PORT, '127.0.0.1', () => {
   log('TCP server listening on port ' + CLAWMINE_PORT);
 });
 
-emitEvent({ type: 'startup', version: '0.4.0' });
+emitEvent({ type: 'startup', version: '0.5.0' });
 
 // Initial connection
 connect();

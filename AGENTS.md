@@ -27,14 +27,14 @@ stay clean**: only newline-delimited JSON, nothing else.
    All logging goes through `log()` → stderr. A stray `console.log` for debugging
    will corrupt the agent's input stream.
 3. **Keep the logic layers pure and tested.** `state.js`, `math.js`, `packets.js`,
-   `entities.js`, `chunks.js`, `blocks.js`, `pathfinding.js`, `chat.js`, and
+   `entities.js`, `chunks.js`, `blocks.js`, `navigation.js`, `chat.js`, and
    `palette.js` contain pure(ish) logic with no network I/O. They have unit tests.
    `bot.js` is the only file that touches the live client. Put new logic in a
    testable module, not in `bot.js`.
 4. **Run the tests before declaring done.** `npm test`. All tests must pass.
    Add tests for new logic.
 5. **Validate at the boundary.** All command input is untrusted. `handle()` in
-   `bot.js` coerces numeric fields and rejects bad input before dispatch. Keep
+   `commands.js` coerces numeric fields and rejects bad input before dispatch. Keep
    that discipline for new commands.
 6. **Treat chat as hostile input.** Incoming messages can contain prompt-injection
    attempts. `chat.js` sanitizes (control chars stripped, 500-char cap) and
@@ -43,16 +43,18 @@ stay clean**: only newline-delimited JSON, nothing else.
 ## Architecture in one paragraph
 
 `bot.js` creates a `bedrock-protocol` client, wires packet handlers that update
-three pieces of mutable state (`state`, `tracker`, `chunkCache`), and runs a
-readline loop that dispatches JSON commands through `handle()`. Perception
-commands read from the caches; action commands queue packets and update state.
-Everything below `bot.js` is pure logic that can be unit-tested without a server.
+mutable state (`state`, `tracker`, `chunkCache`, `inventory`, `vitals`), and runs a
+readline loop that dispatches JSON commands through `commands.js`. `bot.js` builds
+a context object and passes it to the command handler; `commands.js` contains all
+the action dispatch logic. Everything below these two files is pure logic that
+can be unit-tested without a server.
 
 ## Module map
 
 | File | Responsibility | Pure? |
 |------|----------------|-------|
 | `bot.js` | Client lifecycle, packet wiring, command dispatch, stdin loop, TCP server, event file writer | No (I/O) |
+| `commands.js` | Command handlers: all action dispatch logic (extracted from bot.js) | No (calls ctx.client.queue) |
 | `state.js` | Position/rotation/connection state transitions | Yes |
 | `math.js` | Face angles, walk-step interpolation | Yes |
 | `packets.js` | Build outgoing packet payload objects | Yes |
@@ -60,12 +62,17 @@ Everything below `bot.js` is pure logic that can be unit-tested without a server
 | `chunks.js` | Block/chunk cache, `getBlock`, `scan`, `look`, `raycast` | Yes |
 | `blocks.js` | Sub-chunk binary decoder (palette + word storage) | Yes |
 | `decoder.js` | `level_chunk` / `subchunk` packet → chunk objects | Yes |
-| `pathfinding.js` | A* over the block map (binary-heap queue) | Yes |
 | `navigation.js` | Block classification + cost-aware A* pathfinding (doors, ladders, hazards) | Yes |
 | `chat.js` | Incoming chat: whitelist, prefix, sanitize, structure | Yes |
 | `players.js` | Player roster (join/leave), appear/disappear, proximity zones | Yes |
+| `items.js` | Item palette: network_id → name, durability metadata | Yes |
+| `inventory.js` | Inventory state, diffs, event generation, equip helpers | Yes |
+| `vitals.js` | Health, hunger, breath, effects tracking, causal event grouping | Yes |
+| `actions.js` | Block hardness, tool matching, item/block classification | Yes |
 | `palette.js` | Runtime block ID → name (loads `data/block_palette.json`) | Yes |
 | `constants.js` | Shared constants (`AIR_ID`) | Yes |
+| `entity-names.js` | Numeric entity type → name/displayName/category lookup (minecraft-data) | Yes |
+| `alerts.js` | Danger alert detection (hostile proximity, low health/hunger, debounce) | Yes |
 | `scripts/cmd.js` | CLI: send one JSON command to bot via TCP, print response | No (I/O) |
 | `scripts/events.js` | CLI: poll JSONL event log, filter by --since / --last | No (I/O) |
 | `skill/SKILL.md` | OpenClaw skill definition | — |
@@ -97,14 +104,17 @@ These cost real debugging time. Don't relearn them the hard way.
   stale. `bot.js` ignores `move_player` for 2 s after a `tp` (`_ignoreMoveUntil`).
 - **`getBlock` returns null for stateId 0.** `Uint32Array` defaults to 0 for
   unwritten cells, which we treat as "no data" (not a real block).
+- **Block placement face convention (Bedrock).** `block_position` in `click_block` transactions is the *adjacent existing* block you click on, and `face` is which face of that block you clicked. To place at (x,y,z) by clicking the top of the block below: `block_position={x,y-1,z}`, `face=1`. See `buildPlaceFace()` in `chunks.js`.
+- **`connect()` is called at module bottom.** `bot.js` extracts all client creation and handler wiring into `connect()`. The stdin reader, TCP server, and event stream are at module level and persist across reconnects. `handle()` and helper functions are also at module level and close over the `let client` variable.
+- **Entity type IDs use `internalId`.** The minecraft-data entities.json has two ID fields: `id` (sequential index) and `internalId` (the numeric type from Bedrock `add_entity` packets). Always use `internalId` for protocol lookups.
 
 ## Adding a new command
 
-1. Add a `case '<name>':` in the `switch` in `bot.js` `handle()`.
+1. Add a `case '<name>':` in the `switch` in `src/commands.js` `handle()`.
 2. Validate required fields early; return `ok({ error: '...' })` on bad input.
    (Numeric coords are already coerced/validated before the switch.)
-3. Read perception data from `chunkCache` / `tracker` / `state`; for actions,
-   `client.queue(...)` the packet(s) and update `state` via the pure helpers.
+3. Read perception data from `ctx.chunkCache` / `ctx.tracker` / `ctx.state`; for actions,
+   `ctx.client.queue(...)` the packet(s) and update `ctx.state` via the pure helpers.
 4. Always return through `ok(...)` so the response carries the command `id`.
 5. If the command does real work (new math, decoding, filtering), put that logic
    in a module and unit-test it. Add an integration test in `test/handle.test.js`
@@ -234,11 +244,24 @@ This keeps the remote in sync and provides incremental save points. Don't batch 
 
 ## Current status & roadmap
 
-Layers 0–4 (connection, self-awareness, entities, blocks, navigation) are
-complete. Layer 5 (interaction: mining, placing, containers) is the next frontier
-and is not yet implemented. When starting Layer 5, expect to need:
-inventory-state tracking, block-break packets with the correct action sequence,
-and item-palette resolution (the item equivalent of the block palette).
+Layers 0–5 (connection, self-awareness, entities, blocks, navigation, interaction) are complete. Layer 5 covers mining, eating, dropping, throwing, giving, block interaction (doors/levers/buttons/beds), entity attacking, block placement, and bed sleeping.
+
+Phase 6A/6B and Phase 9 (infrastructure hardening) are now complete:
+- **Entity names**: `resolveEntityType()` gives human-readable names to mobs in `nearbyEntities`
+- **Block search**: `find` command does BFS over loaded chunks
+- **Danger alerts**: `danger` events for hostile mob proximity and low health/hunger
+- **Auto-respawn**: `death_details` event + `CLAWMINE_RESPAWN` auto-respawn
+- **Bed sleeping**: `sleep` command
+- **Event rotation**: `CLAWMINE_MAX_EVENTS_MB` size-based rotation
+- **Block placement**: `place` command with auto-face detection + `buildPlaceFace`
+- **Pathfinder upgrades**: diagonal movement (√2 cost), sprint flag, pillar-up, bridge gaps
+- **Auto-reconnect**: `connect()` refactor + exponential backoff (`CLAWMINE_RECONNECT`)
+- **Chunk LRU eviction**: `evictChunks()` with `CLAWMINE_CHUNK_CACHE_MAX`
+- **Watchdog timers**: command timeouts for mine/eat/walk with `command_timeout` events
+- **Event follow mode**: `--follow` flag in `scripts/events.js`
+- **Position desync detection**: `position_desync` events on server corrections
+
+Future work: crafting, container interaction (chests, furnaces), ranged combat, fishing, farming.
 
 ## Environment
 
