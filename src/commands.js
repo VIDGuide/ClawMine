@@ -12,7 +12,7 @@ import { faceAngles, walkSteps } from './math.js';
 import { setPosition, setRotation } from './state.js';
 import { buildMovePlayer, buildPlayerAuthInput, buildChat, buildMobEquipment, buildInventoryTransaction, buildPlayerAction, buildItemUseTransaction, buildItemUseOnEntityTransaction, buildItemReleaseTransaction } from './packets.js';
 import { nearbyEntities } from './entities.js';
-import { getBlock, getBlocks, chunkStatus, scan, direction, raycast, findBlocks, buildPlaceFace } from './chunks.js';
+import { getBlock, getBlocks, chunkStatus, scan, compactScan, direction, raycast, findBlocks, buildPlaceFace } from './chunks.js';
 import { findPath, euclideanDistance } from './navigation.js';
 import { titleFor, uuidFor, count as emoteCount } from './emotes.js';
 import { findItemByName } from './items.js';
@@ -157,6 +157,14 @@ export function handle(cmd, ctx, outputFn) {
         const sz = cmd.z ?? ctx.state.pos?.z;
         if (sx === undefined) return ok({ error: 'No position' });
         return ok(scan(ctx.chunkCache, sx, sy, sz, cmd.radius ?? 4, cmd.radiusY ?? 2, cmd.radius ?? 4));
+      }
+
+      case 'compact_scan': {
+        const sx = cmd.x ?? ctx.state.pos?.x;
+        const sy = cmd.y ?? ctx.state.pos?.y;
+        const sz = cmd.z ?? ctx.state.pos?.z;
+        if (sx === undefined) return ok({ error: 'No position' });
+        return ok(compactScan(ctx.chunkCache, sx, sy, sz, cmd.radius ?? 4, cmd.radiusY ?? 2, cmd.radius ?? 4));
       }
 
       case 'look': {

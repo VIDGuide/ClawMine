@@ -219,10 +219,17 @@ node $SKILL_DIR/scripts/cmd.js '{"action":"blocks","x1":0,"y1":60,"z1":0,"x2":10
 node $SKILL_DIR/scripts/cmd.js '{"action":"chunks","radius":4}'
 
 # Structured scan of blocks around a point (returns layers, walls, floor, ceiling)
+# Uses text names (no state IDs); notable filters out common fill blocks
 node $SKILL_DIR/scripts/cmd.js '{"action":"scan"}'
 node $SKILL_DIR/scripts/cmd.js '{"action":"scan","radius":4,"radiusY":2}'
 node $SKILL_DIR/scripts/cmd.js '{"action":"scan","x":0,"y":64,"z":0,"radius":4,"radiusY":2}'
 # Key response fields: loaded (bool), unloaded (count), totalNonAir, notable, layers
+
+# Compact scan: only notable/interesting blocks, no air, no common fill (stone, dirt, etc.)
+# Ideal for LLM decision-making — minimal output, text names only
+node $SKILL_DIR/scripts/cmd.js '{"action":"compact_scan"}'
+node $SKILL_DIR/scripts/cmd.js '{"action":"compact_scan","radius":4,"radiusY":2}'
+# Key response fields: loaded (bool), totalNonAir, notableCount, notable [{x,y,z,name}]
 
 # Blocks in the direction the bot is facing
 node $SKILL_DIR/scripts/cmd.js '{"action":"look","distance":10}'
@@ -248,6 +255,9 @@ node $SKILL_DIR/scripts/cmd.js '{"action":"find","block":"diamond_ore","radius":
 | `scan` | `x`,`y`,`z` | number | No | Center (defaults to bot position) |
 | `scan` | `radius` | number | No | XZ radius (default: 4) |
 | `scan` | `radiusY` | number | No | Y radius (default: 2) |
+| `compact_scan` | `x`,`y`,`z` | number | No | Center (defaults to bot position) |
+| `compact_scan` | `radius` | number | No | XZ radius (default: 4) |
+| `compact_scan` | `radiusY` | number | No | Y radius (default: 2) |
 | `look` | `distance` | number | No | Look distance in blocks (default: 10) |
 | `raycast` | `x`,`y`,`z` | number | Yes | Target point |
 | `find` | `block` | string | Yes | Block name pattern (substring match, e.g. `iron_ore`) |

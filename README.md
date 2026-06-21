@@ -75,6 +75,7 @@ Send JSON commands via stdin, one per line. Responses come back on stdout.
 {"action":"blocks","x1":0,"y1":60,"z1":0,"x2":10,"y2":70,"z2":10}
 {"action":"chunks","radius":4}
 {"action":"scan","radius":4,"radiusY":2}
+{"action":"compact_scan","radius":4,"radiusY":2}
 {"action":"look","distance":10}
 {"action":"raycast","x":50,"y":64,"z":50}
 {"action":"path","x":50,"y":64,"z":50}
@@ -118,7 +119,8 @@ Send JSON commands via stdin, one per line. Responses come back on stdout.
 | `block` | 3 | Get the block at a coordinate (with resolved name) |
 | `blocks` | 3 | Get blocks in a cuboid, optionally filtered by name |
 | `chunks` | 3 | Report which chunks are loaded near the bot |
-| `scan` | 3 | Structured scan: layers, walls, floor, ceiling; includes `loaded` flag |
+| `scan` | 3 | Structured scan: layers, walls, floor, ceiling; notable blocks exclude common fill; uses text names |
+| `compact_scan` | 3 | Filtered scan: only notable/interesting blocks (no air, no common fill), text names only — ideal for LLM decision-making |
 | `look` | 3 | Blocks in the direction the bot is facing |
 | `raycast` | 3 | Line-of-sight check between two points |
 | `path` | 4 | Compute an A* path to a target (no movement) |

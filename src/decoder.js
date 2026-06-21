@@ -54,7 +54,7 @@ export function applyBlockUpdates(chunk, blockUpdates) {
   const cloned = new Set(); // track which sub-chunks we've already cloned
   for (const update of blockUpdates) {
     try {
-      const cy = Math.floor((update.y + 64) / 16);
+      const cy = Math.floor(update.y / 16);
       const ly = update.y & 0xf;
       const lx = (update.x & 0xf);
       const lz = (update.z & 0xf);

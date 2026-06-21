@@ -125,11 +125,11 @@ function requestSubChunks(cx, cz) {
   const botY = state.pos?.y ?? 64;
   const centerSub = Math.floor((botY + 64) / 16);
   const requests = [];
-  // Request sub-chunks around bot Y, allowing negative offsets for deep terrain.
-  // origin.y = -4 (world minimum sub-chunk), dy is offset from that.
+  // Request sub-chunks around bot Y. origin.y = -4 (world minimum sub-chunk),
+  // dy is offset from origin. Valid sub-chunk indices are -4..19, so offsets are 0..23.
   for (let r = -3; r <= 3; r++) {
     const dy = centerSub + r;
-    if (dy >= -4 && dy <= 19) requests.push({ x: 0, y: dy, z: 0 });
+    if (dy >= 0 && dy <= 23) requests.push({ x: 0, y: dy, z: 0 });
   }
   if (requests.length === 0) return;
   try {

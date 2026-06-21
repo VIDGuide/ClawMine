@@ -123,6 +123,37 @@ describe('chunks', () => {
       const result = getBlock(cache, 0, 133, 0);
       assert.equal(result, null);
     });
+
+    it('uses Math.floor(y/16) as sub-chunk key at high altitudes', () => {
+      let cache = createChunkCache();
+      const subChunks = new Map();
+      // Sub-chunk 16 covers Y=256..271, sub-chunk 18 covers Y=288..303
+      const sub16 = new Uint32Array(4096);
+      sub16[(0 << 8) | (0 << 4) | 4] = 9999; // local y=4 → world y=260
+      subChunks.set(16, sub16);
+      const sub18 = new Uint32Array(4096);
+      sub18[(0 << 8) | (0 << 4) | 12] = 8888; // local y=12 → world y=300
+      subChunks.set(18, sub18);
+      cache = setChunk(cache, 0, 0, { x: 0, z: 0, subChunks });
+
+      const r260 = getBlock(cache, 0, 260, 0);
+      assert.equal(r260.stateId, 9999, 'Y=260 should read from sub-chunk 16');
+      const r300 = getBlock(cache, 0, 300, 0);
+      assert.equal(r300.stateId, 8888, 'Y=300 should read from sub-chunk 18');
+    });
+
+    it('uses Math.floor(y/16) as sub-chunk key at negative Y', () => {
+      let cache = createChunkCache();
+      const subChunks = new Map();
+      // Sub-chunk -4 covers Y=-64..-49
+      const subNeg4 = new Uint32Array(4096);
+      subNeg4[(0 << 8) | (0 << 4) | 4] = 7777; // local y=4 → world y=-60
+      subChunks.set(-4, subNeg4);
+      cache = setChunk(cache, 0, 0, { x: 0, z: 0, subChunks });
+
+      const r = getBlock(cache, 0, -60, 0);
+      assert.equal(r.stateId, 7777, 'Y=-60 should read from sub-chunk -4');
+    });
   });
 
   describe('getBlocks', () => {

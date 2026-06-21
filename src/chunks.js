@@ -211,11 +211,13 @@ export function scan(cache, cx, cy, cz, radiusX = 3, radiusY = 2, radiusZ = 3) {
         const block = getBlock(cache, x, y, z);
         if (block === null) { unloadedCount++; continue; }
         if (!isAir(block)) {
-          const entry = { x, y, z, stateId: block.stateId, name: block.name };
+          const entry = { x, y, z, name: block.name };
           row.push(entry);
 
-          // Track notable blocks — all non-air blocks are notable
-          notable.push(entry);
+          // Notable: only non-common-fill blocks
+          if (!COMMON_FILL.has(block.name)) {
+            notable.push(entry);
+          }
         }
       }
     }
@@ -230,9 +232,9 @@ export function scan(cache, cx, cy, cz, radiusX = 3, radiusY = 2, radiusZ = 3) {
   for (let x = minX; x <= maxX; x++) {
     for (let z = minZ; z <= maxZ; z++) {
       const bFloor = getBlock(cache, x, floorY, z);
-      if (!isAir(bFloor)) floor.push({ x, y: floorY, z, stateId: bFloor.stateId });
+      if (!isAir(bFloor)) floor.push({ x, y: floorY, z, name: bFloor.name });
       const bCeil = getBlock(cache, x, ceilingY, z);
-      if (!isAir(bCeil)) ceiling.push({ x, y: ceilingY, z, stateId: bCeil.stateId });
+      if (!isAir(bCeil)) ceiling.push({ x, y: ceilingY, z, name: bCeil.name });
     }
   }
 
@@ -241,15 +243,15 @@ export function scan(cache, cx, cy, cz, radiusX = 3, radiusY = 2, radiusZ = 3) {
   for (let yg = minY; yg <= maxY; yg++) {
     for (let xg = minX; xg <= maxX; xg++) {
       const bNorth = getBlock(cache, xg, yg, minZ);
-      if (!isAir(bNorth)) walls.north.push({ x: xg, y: yg, z: minZ, stateId: bNorth.stateId });
+      if (!isAir(bNorth)) walls.north.push({ x: xg, y: yg, z: minZ, name: bNorth.name });
       const bSouth = getBlock(cache, xg, yg, maxZ);
-      if (!isAir(bSouth)) walls.south.push({ x: xg, y: yg, z: maxZ, stateId: bSouth.stateId });
+      if (!isAir(bSouth)) walls.south.push({ x: xg, y: yg, z: maxZ, name: bSouth.name });
     }
     for (let zg = minZ; zg <= maxZ; zg++) {
       const bWest = getBlock(cache, minX, yg, zg);
-      if (!isAir(bWest)) walls.west.push({ x: minX, y: yg, z: zg, stateId: bWest.stateId });
+      if (!isAir(bWest)) walls.west.push({ x: minX, y: yg, z: zg, name: bWest.name });
       const bEast = getBlock(cache, maxX, yg, zg);
-      if (!isAir(bEast)) walls.east.push({ x: maxX, y: yg, z: zg, stateId: bEast.stateId });
+      if (!isAir(bEast)) walls.east.push({ x: maxX, y: yg, z: zg, name: bEast.name });
     }
   }
 
@@ -342,6 +344,66 @@ export function raycast(cache, ax, ay, az, bx, by, bz) {
   return { clear: true, distance: dist, obstacle: null };
 }
 
+
+// ── Common fill blocks to exclude from compact_scan ────────────
+const COMMON_FILL = new Set([
+  'minecraft:stone', 'minecraft:granite', 'minecraft:diorite', 'minecraft:andesite',
+  'minecraft:dirt', 'minecraft:grass_block', 'minecraft:grass', 'minecraft:coarse_dirt',
+  'minecraft:cobblestone', 'minecraft:bedrock', 'minecraft:sand', 'minecraft:gravel',
+  'minecraft:sandstone', 'minecraft:netherrack', 'minecraft:end_stone',
+  'minecraft:deepslate', 'minecraft:tuff', 'minecraft:calcite',
+  'minecraft:smooth_basalt', 'minecraft:basalt', 'minecraft:blackstone',
+  'minecraft:soul_sand', 'minecraft:soul_soil',
+  'minecraft:mud', 'minecraft:clay', 'minecraft:terracotta',
+  'minecraft:snow', 'minecraft:snow_layer', 'minecraft:ice', 'minecraft:packed_ice',
+  'minecraft:moss_block', 'minecraft:podzol', 'minecraft:mycelium',
+  'minecraft:red_sand', 'minecraft:red_sandstone',
+]);
+
+/**
+ * Compact scan: returns only notable/interesting blocks in a volume,
+ * filtering out air and common solid fill. Uses text names only, no IDs.
+ * Designed for LLM consumption — minimal, readable output.
+ */
+export function compactScan(cache, cx, cy, cz, radiusX = 4, radiusY = 2, radiusZ = 4) {
+  const notable = [];
+  let unloadedCount = 0;
+  let totalQueried = 0;
+  let totalNonAir = 0;
+
+  const minY = cy - radiusY;
+  const maxY = cy + radiusY;
+  const minX = cx - radiusX;
+  const maxX = cx + radiusX;
+  const minZ = cz - radiusZ;
+  const maxZ = cz + radiusZ;
+
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        totalQueried++;
+        const block = getBlock(cache, x, y, z);
+        if (block === null) { unloadedCount++; continue; }
+        if (isAir(block)) continue;
+        totalNonAir++;
+        if (!COMMON_FILL.has(block.name)) {
+          notable.push({ x, y, z, name: block.name });
+        }
+      }
+    }
+  }
+
+  return {
+    origin: { x: cx, y: cy, z: cz },
+    bounds: { x: [minX, maxX], y: [minY, maxY], z: [minZ, maxZ] },
+    loaded: unloadedCount === 0,
+    unloaded: unloadedCount,
+    total: totalQueried,
+    totalNonAir,
+    notable,
+    notableCount: notable.length,
+  };
+}
 
 /**
  * Evict distant/stale chunks from the cache (LRU-style).

@@ -4,6 +4,7 @@ import {
   createChunkCache,
   setChunk,
   scan,
+  compactScan,
   direction,
   raycast,
 } from '../src/chunks.js';
@@ -65,7 +66,7 @@ describe('perception', () => {
       const result = scan(cache, 5, 64, 5, 2, 1, 2);
       assert.equal(result.totalNonAir, 1);
       assert.equal(result.layers['64'].length, 1);
-      assert.ok(result.layers['64'][0].stateId === 2532);
+      assert.ok(result.layers['64'][0].name);
     });
 
     it('tags notable blocks (ores, chests, etc.)', () => {
@@ -78,9 +79,13 @@ describe('perception', () => {
       cache = setChunk(cache, 0, 0, chunk);
 
       const result = scan(cache, 5, 64, 5, 2, 1, 2);
+      // These stateIds don't resolve in palette, so names are state_XXXX
+      // which are not in COMMON_FILL, so all 3 should be notable
       assert.equal(result.notable.length, 3);
-      const notableIds = result.notable.map(n => n.stateId).sort();
-      assert.deepEqual(notableIds, [2532, 3203, 7336]);
+      for (const n of result.notable) {
+        assert.ok(n.name, 'notable entry should have name');
+        assert.equal(n.stateId, undefined, 'notable entry should not have stateId');
+      }
     });
 
     it('detects walls at boundary', () => {
@@ -162,6 +167,55 @@ describe('perception', () => {
       const result = raycast(cache, 0, 64, 0, 0, 64, 0);
       assert.equal(result.clear, true);
       assert.equal(result.distance, 0);
+    });
+  });
+
+  describe('compactScan', () => {
+    it('returns empty when no chunks loaded', () => {
+      const cache = createChunkCache();
+      const result = compactScan(cache, 0, 64, 0, 2, 1, 2);
+      assert.equal(result.notableCount, 0);
+      assert.equal(result.notable.length, 0);
+      assert.equal(result.loaded, false);
+    });
+
+    it('includes non-common-fill blocks in notable', () => {
+      let cache = createChunkCache();
+      // stateId 9999 won't resolve in palette → state_9999 (not common fill)
+      const chunk = makeChunk(0, 0, {
+        [posKey(5, 64, 5)]: { stateId: 9999 },
+      });
+      cache = setChunk(cache, 0, 0, chunk);
+      const result = compactScan(cache, 5, 64, 5, 2, 1, 2);
+      assert.equal(result.notableCount, 1);
+      assert.equal(result.notable[0].name, 'state_9999');
+      assert.equal(result.notable[0].stateId, undefined);
+    });
+
+    it('has no stateId in output', () => {
+      let cache = createChunkCache();
+      const chunk = makeChunk(0, 0, {
+        [posKey(5, 64, 5)]: { stateId: 9999 },
+        [posKey(6, 64, 5)]: { stateId: 8888 },
+      });
+      cache = setChunk(cache, 0, 0, chunk);
+      const result = compactScan(cache, 5, 64, 5, 2, 1, 2);
+      for (const n of result.notable) {
+        assert.equal(n.stateId, undefined);
+        assert.ok(n.name);
+        assert.ok(n.x !== undefined);
+      }
+    });
+
+    it('reports totalNonAir including common fill', () => {
+      let cache = createChunkCache();
+      const chunk = makeChunk(0, 0, {
+        [posKey(5, 64, 5)]: { stateId: 9999 },
+        [posKey(6, 64, 5)]: { stateId: 8888 },
+      });
+      cache = setChunk(cache, 0, 0, chunk);
+      const result = compactScan(cache, 5, 64, 5, 2, 1, 2);
+      assert.equal(result.totalNonAir, 2);
     });
   });
 });
