@@ -1,0 +1,15 @@
+{"type":"startup","version":"0.5.0","timestamp":1782480012883}
+{"type":"ready","timestamp":1782480014765}
+{"type":"player_join","name":"Claw(2)","uuid":"693b32b5-62fc-da36-9a09-b43c5c61928b","platform":"windows","timestamp":1782480015391}
+{"type":"player_join","name":"VIDGuide","uuid":"b43729a1-a130-81d7-4f68-68755f766aba","platform":"playstation","timestamp":1782480015391}
+{"type":"respawn","timestamp":1782480015857}
+{"type":"respawn","timestamp":1782480015857}
+{"type":"respawn","timestamp":1782480015858}
+{"type":"player_appear","name":"Claw(2)","uuid":"693b32b5-62fc-da36-9a09-b43c5c61928b","position":{"x":0.5,"y":118,"z":0.5},"timestamp":1782480015879}
+{"type":"vitals_changed","changes":[{"attr":"movementSpeed","old":0.1,"new":0.10000000149011612},{"attr":"breath","old":0,"new":0.019999999552965164},{"attr":"luck","new":0},{"attr":"exhaustion","new":0}],"timestamp":1782480015962}
+{"type":"spawn","timestamp":1782480018887}
+{"type":"player_appear","name":"VIDGuide","uuid":"b43729a1-a130-81d7-4f68-68755f766aba","position":{"x":-3.5106446743011475,"y":95,"z":-63.949951171875},"timestamp":1782480022085}
+{"type":"msg","from":"","msg":"§e%multiplayer.player.left","direct":false,"whisper":false,"system":false,"timestamp":1782480036201}
+{"type":"player_leave","name":"Claw(2)","uuid":"693b32b5-62fc-da36-9a09-b43c5c61928b","timestamp":1782480036251}
+{"type":"msg","from":"Server","msg":"[Server] Claw cleanup done","direct":false,"whisper":false,"system":true,"timestamp":1782480040054}
+{"type":"shutdown","timestamp":1782480042138}

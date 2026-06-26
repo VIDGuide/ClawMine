@@ -152,6 +152,7 @@ function startAuthHeartbeat() {
 
 // ── Sub-chunk request (module scope so handle()/ctx can call it) ──
 let _subchunkSerializerPatched = false;
+let _itemSerializerPatched = false;
 
 function setupSubchunkSerializer() {
   if (_subchunkSerializerPatched || !client.serializer) return;
@@ -224,6 +225,7 @@ function connect() {
   _pendingSubchunkRequests.length = 0;
   // Reset serializer patches on reconnect — they're client-specific.
   _subchunkSerializerPatched = false;
+  _itemSerializerPatched = false;
 
   // ── Spawn handshake state (reset each connect) ─────────
   let _startGameDone = false;
@@ -274,6 +276,8 @@ client.on('join', () => {
   _reconnectAttempt = 0; // reset backoff on successful connection
   emitEvent({ type: _reconnectAttempt > 0 ? 'reconnected' : 'ready' });
   log('Joined');
+  // Patch Item serializer for 1.26.31 (strip extra fields from inventory_transaction)
+  // setupItemSerializer(); // TODO: implement this function
   // autoInitPlayer is false — we control the full spawn sequence in tryFinalizeSpawn().
   // Start the idle 20Hz heartbeat now. The real client streams idle
   // player_auth_input throughout loading, before init. Self-guards on state.pos.

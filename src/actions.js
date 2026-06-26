@@ -20,8 +20,8 @@ try {
 
 // ── Tool speed multipliers ────────────────────────────────
 
-const TOOL_SPEEDS = { wooden: 2, stone: 4, iron: 6, diamond: 8, netherite: 9, golden: 12 };
-const TOOL_TIER_RE = /^(wooden|stone|iron|diamond|netherite|golden)_/;
+const TOOL_SPEEDS = { wooden: 2, stone: 4, iron: 6, diamond: 8, netherite: 9, golden: 12, copper: 3 };
+const TOOL_TIER_RE = /^(wooden|stone|iron|diamond|netherite|golden|copper)_/;
 const TOOL_TYPE_RE = /_(pickaxe|axe|shovel|hoe|sword)$/;
 
 // Material → tool type mapping

@@ -112,8 +112,8 @@ export function buildPlayerAuthInput(state, x, y, z, yawVal, pitchVal, inputMode
       start_flying: false, stop_flying: false, received_server_data: false,
       client_predicted_vehicle: false, paddling_left: false, paddling_right: false,
       // Match the real client: it sets these even at rest / on the ground.
-      block_breaking_delay_enabled: true, horizontal_collision: false,
-      vertical_collision: onGround, down_left: false, down_right: false,
+      block_breaking_delay_enabled: false, horizontal_collision: false,
+      vertical_collision: false, down_left: false, down_right: false,
       start_using_item: false, camera_relative_movement_enabled: false,
       rot_controlled_by_move_direction: false, start_spin_attack: false,
       stop_spin_attack: false, hotbar_only_touch: false,
