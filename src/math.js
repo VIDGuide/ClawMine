@@ -46,7 +46,7 @@ export function faceAngles(from, to) {
  * Calculate walk steps from `from` to `to`.
  * Returns array of intermediate positions (excluding start, including end).
  */
-export function walkSteps(from, to, speed = 0.18) {
+export function walkSteps(from, to, speed = 0.31) {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dz = to.z - from.z;

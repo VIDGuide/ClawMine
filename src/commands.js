@@ -117,32 +117,48 @@ export function handle(cmd, ctx, outputFn) {
       case 'move': {
         if (!ctx.state.pos) return ok({ error: 'No position' });
         const target = { x: cmd.x, y: cmd.y, z: cmd.z };
-        // The bot faces the target so the local-space analog move_vector (z=forward)
-        // points the right way; all steps are colinear so yaw/pitch are constant.
-        const moveAngles = faceAngles(ctx.state.pos, target);
-        const steps = walkSteps(ctx.state.pos, target);
-        if (steps.length === 0) return ok({ moved: true, steps: 0, pos: ctx.state.pos });
-        ctx.state = { ...ctx.state, ...setRotation(ctx.state, moveAngles.yaw, moveAngles.pitch) };
-        // Send inputs PACED at ~20Hz (one per 50ms), not in a synchronous burst.
-        // Under server-authoritative movement the server integrates the analog
-        // move_vector over REAL elapsed time — a burst gives it no time to simulate,
-        // so the player doesn't actually move. Matches the real client's 20Hz stream.
+        const toTarget = faceAngles(ctx.state.pos, target);
+        const isHorizontal = Math.abs(target.y - ctx.state.pos.y) < 1;
+        const usePitch = isHorizontal ? 0 : toTarget.pitch;
+        ctx.state = { ...ctx.state, ...setRotation(ctx.state, toTarget.yaw, usePitch) };
+        // Total distance for step count estimate (server may move differently)
+        const dx = target.x - ctx.state.pos.x;
+        const dz = target.z - ctx.state.pos.z;
+        const totalDist = Math.sqrt(dx * dx + dz * dz);
+        const steps = Math.max(1, Math.ceil(totalDist / 0.31));
         if (ctx.getActiveWalk && ctx.getActiveWalk()) return ok({ error: 'Already moving — abort_walk first' });
         const moveId = id;
         let mi = 0;
+        // Walk toward target: each tick we compute a step from the CURRENT
+        // (possibly server-corrected) position toward the target. This means
+        // corrections are naturally absorbed — no drift accumulation.
         const moveTimer = setInterval(() => {
-          // Guard: abort_walk clears the timer but queued callbacks can still fire.
           const aw = ctx.getActiveWalk();
           if (!aw || aw.id !== moveId) { clearInterval(moveTimer); return; }
-          if (mi >= steps.length) {
+          const remainingDist = Math.hypot(target.x - ctx.state.pos.x, target.z - ctx.state.pos.z);
+          if (remainingDist < 0.15) {
             clearInterval(moveTimer);
             ctx.setActiveWalk(null);
-            ctx.emitEvent({ type: 'walk_done', id: moveId, walked: steps.length, pos: ctx.state.pos });
+            ctx.emitEvent({ type: 'walk_done', id: moveId, walked: mi, pos: ctx.state.pos });
             return;
           }
-          const step = steps[mi++];
+          mi++;
+          // Take a step of ~0.18 blocks toward target from current position
+          const frac = Math.min(1, 0.31 / remainingDist);
+          const step = {
+            x: ctx.state.pos.x + (target.x - ctx.state.pos.x) * frac,
+            y: ctx.state.pos.y,
+            z: ctx.state.pos.z + (target.z - ctx.state.pos.z) * frac,
+          };
           ctx.client.queue('player_auth_input', buildPlayerAuthInput(
-            ctx.state, step.x, step.y, step.z, moveAngles.yaw, moveAngles.pitch, 'mouse',
+            ctx.state, step.x, step.y, step.z, toTarget.yaw, usePitch, 'mouse',
+            { tick: ctx.getTick(), moveForward: 1 },
+          ));
+          ctx.state = { ...ctx.state, ...setPosition(ctx.state, step.x, step.y, step.z) };
+          ctx.setState(ctx.state);
+          aw.stepIdx = mi;
+          ctx.client.queue('player_auth_input', buildPlayerAuthInput(
+            ctx.state, step.x, step.y, step.z, toTarget.yaw, usePitch, 'mouse',
             { tick: ctx.getTick(), moveForward: 1 },
           ));
           ctx.state = { ...ctx.state, ...setPosition(ctx.state, step.x, step.y, step.z) };
@@ -150,7 +166,7 @@ export function handle(cmd, ctx, outputFn) {
           aw.stepIdx = mi;
         }, 50);
         ctx.setActiveWalk({ timer: moveTimer, id: moveId, steps: steps.length, stepIdx: 0 });
-        return ok({ moving: true, steps: steps.length, pos: target });
+        return ok({ moving: true, steps, pos: target });
       }
 
       case 'setpos': {
